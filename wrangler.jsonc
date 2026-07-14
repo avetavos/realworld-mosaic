@@ -1,0 +1,17 @@
+{
+  // Cloudflare Worker (static assets) for the Mosaic guide.
+  // The site is built with Astro `base: '/mosaic'`, so the built files must be
+  // served under a `/mosaic/` path. `npm run deploy` stages `dist/` into
+  // `.cf-assets/mosaic/` and serves `.cf-assets` as the asset root.
+  "name": "realworld-mosaic",
+  "compatibility_date": "2024-09-23",
+  "assets": {
+    "directory": "./.cf-assets"
+  },
+  // projects.avetavos.com is the shared host (taskflow owns it as a custom
+  // domain). Mosaic is served under /mosaic/* (Astro base) via a
+  // more-specific Workers route, the same way the other guides are.
+  "routes": [
+    { "pattern": "projects.avetavos.com/mosaic/*", "zone_name": "avetavos.com" }
+  ]
+}
