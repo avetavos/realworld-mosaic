@@ -1,0 +1,257 @@
+---
+title: Tokens and Primitives
+description: "Design tokens as CSS custom properties and Web Component primitives, packaged in @mosaic/design-system."
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+A shared design system, `@mosaic/design-system`, made of two layers that every framework in Mosaic can consume:
+
+- **Design tokens** — the raw values (colour, spacing, radius) exposed as **CSS custom properties**: `--m-color-primary`, `--m-space-3`, and so on.
+- **Primitives** — a handful of **Web Component** custom elements built on those tokens: `<m-button>`, `<m-card>`, `<m-badge>`.
+
+The catalog is React, the cart is Svelte, the content site is Astro. If each team styles its own buttons, Mosaic looks like three different products stitched together — which, visually, is exactly what we're trying to avoid. Tokens plus custom elements give us one button, defined once, that renders identically everywhere.
+
+This lesson builds the package and its three primitives. We already met the custom-element pattern in [Web Components Interop →](/mosaic/en/web-components/); here we use it deliberately as the shared-UI layer.
+
+## Why
+
+A design system for a **single-framework** app is easy: ship a React component library. Mosaic can't do that, because a React `<Button>` can't render inside the Svelte cart or an Astro page. We need a primitive whose runtime is the browser itself.
+
+Two web-platform features make this work together:
+
+- **Custom elements** encapsulate structure and behaviour behind a real DOM tag (`<m-button>`). Any framework can render a tag.
+- **CSS custom properties inherit *through* the shadow boundary.** A token set on `:root` reaches inside every primitive's shadow root. That single fact is why tokens and shadow DOM compose: the primitive stays encapsulated, but the theme still flows in.
+
+So the split is deliberate. Tokens are open (global, themeable, overridable per surface); the primitives' internals are closed (encapsulated in shadow DOM so no remote's stylesheet can leak in and break them).
+
+## Pros & cons
+
+**Tokens as CSS custom properties vs. tokens as a JS/TS object**
+
+- **Pros:** CSS variables are live and cascading — set `--m-color-primary` on a wrapper and everything below re-themes with zero JS. They cross the shadow boundary for free, so shadow-DOM primitives read them without any wiring.
+- **Cons:** No import-time type checking; a typo like `--m-colour-primary` fails silently to the fallback. You lose the autocomplete a typed token object would give you.
+
+**Primitives as Web Components vs. one component library per framework**
+
+- **Pros:** Defined once, rendered by React, Svelte, and Astro alike. No per-framework port to keep in sync; the button can't drift between teams.
+- **Cons:** Custom elements are more verbose to author than a framework component, and form participation (labels, `disabled`, focus) takes deliberate work that a native `<button>` gives you free.
+
+## Set it up
+
+### 1. `packages/design-system/package.json`
+
+A plain ESM package, no build step required for dev — Vite consumes the `.ts` source directly through the workspace.
+
+```json
+{
+  "name": "@mosaic/design-system",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens.css": "./src/tokens.css"
+  }
+}
+```
+
+### 2. `packages/design-system/src/tokens.css`
+
+The tokens live on `:root` so they inherit everywhere — including into every primitive's shadow DOM.
+
+```css
+:root {
+  /* Colour */
+  --m-color-primary: #8b5cf6;
+  --m-color-primary-ink: #ffffff;
+  --m-color-surface: #ffffff;
+  --m-color-border: #e5e7eb;
+  --m-color-text: #1f2937;
+  --m-color-muted: #6b7280;
+  --m-color-danger: #dc2626;
+
+  /* Spacing scale */
+  --m-space-1: 4px;
+  --m-space-2: 8px;
+  --m-space-3: 12px;
+  --m-space-4: 16px;
+
+  /* Shape & type */
+  --m-radius: 10px;
+  --m-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+```
+
+### 3. `packages/design-system/src/m-button.ts`
+
+A custom element with an encapsulated shadow root. We use a **constructable stylesheet** shared across all instances, and read tokens straight through the shadow boundary via `var(--m-...)` — note the fallbacks, so the button still looks sane if a consumer forgets to import `tokens.css`.
+
+```ts
+const sheet = new CSSStyleSheet();
+sheet.replaceSync(`
+  :host { display: inline-block; }
+  button {
+    font: 600 14px/1 var(--m-font, sans-serif);
+    color: var(--m-color-primary-ink, #fff);
+    background: var(--m-color-primary, #8b5cf6);
+    border: 0;
+    border-radius: var(--m-radius, 8px);
+    padding: var(--m-space-2, 8px) var(--m-space-4, 16px);
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.05); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  :host([variant="ghost"]) button {
+    background: transparent;
+    color: var(--m-color-primary, #8b5cf6);
+    box-shadow: inset 0 0 0 1px var(--m-color-border, #e5e7eb);
+  }
+`);
+
+export class MButton extends HTMLElement {
+  static observedAttributes = ["disabled"];
+
+  connectedCallback() {
+    if (this.shadowRoot) return; // already mounted
+    const root = this.attachShadow({ mode: "open" });
+    root.adoptedStyleSheets = [sheet];
+    root.innerHTML = `<button><slot></slot></button>`;
+    this.#sync();
+  }
+
+  attributeChangedCallback() {
+    this.#sync();
+  }
+
+  #sync() {
+    const btn = this.shadowRoot?.querySelector("button");
+    if (btn) btn.disabled = this.hasAttribute("disabled");
+  }
+}
+```
+
+### 4. `packages/design-system/src/m-card.ts` and `m-badge.ts`
+
+`<m-card>` is a slotted container; `<m-badge>` is a small labelled pill with a `tone` attribute.
+
+```ts
+// m-card.ts
+const cardSheet = new CSSStyleSheet();
+cardSheet.replaceSync(`
+  :host {
+    display: block;
+    background: var(--m-color-surface, #fff);
+    border: 1px solid var(--m-color-border, #e5e7eb);
+    border-radius: var(--m-radius, 8px);
+    padding: var(--m-space-4, 16px);
+    color: var(--m-color-text, #1f2937);
+  }
+`);
+
+export class MCard extends HTMLElement {
+  connectedCallback() {
+    if (this.shadowRoot) return;
+    const root = this.attachShadow({ mode: "open" });
+    root.adoptedStyleSheets = [cardSheet];
+    root.innerHTML = `<slot></slot>`;
+  }
+}
+```
+
+```ts
+// m-badge.ts
+const badgeSheet = new CSSStyleSheet();
+badgeSheet.replaceSync(`
+  :host {
+    display: inline-block;
+    font: 600 12px/1 var(--m-font, sans-serif);
+    padding: var(--m-space-1, 4px) var(--m-space-2, 8px);
+    border-radius: 999px;
+    background: var(--m-color-primary, #8b5cf6);
+    color: var(--m-color-primary-ink, #fff);
+  }
+  :host([tone="danger"]) { background: var(--m-color-danger, #dc2626); }
+`);
+
+export class MBadge extends HTMLElement {
+  connectedCallback() {
+    if (this.shadowRoot) return;
+    const root = this.attachShadow({ mode: "open" });
+    root.adoptedStyleSheets = [badgeSheet];
+    root.innerHTML = `<slot></slot>`;
+  }
+}
+```
+
+### 5. `packages/design-system/src/index.ts`
+
+The entry point registers every primitive once. The `customElements.get` guard matters in a micro-frontend: two remotes may both import the package, and defining the same tag twice throws.
+
+```ts
+import { MButton } from "./m-button.js";
+import { MCard } from "./m-card.js";
+import { MBadge } from "./m-badge.js";
+
+function define(tag: string, ctor: CustomElementConstructor) {
+  if (!customElements.get(tag)) customElements.define(tag, ctor);
+}
+
+define("m-button", MButton);
+define("m-card", MCard);
+define("m-badge", MBadge);
+
+export { MButton, MCard, MBadge };
+```
+
+## Verify
+
+Install the workspace and register the primitives from any app that depends on `@mosaic/design-system`.
+
+```bash
+pnpm --filter @mosaic/design-system install
+```
+
+In a scratch HTML page (or the shell's `index.html`), import the tokens and the registrar, then drop the tags in:
+
+```html
+<link rel="stylesheet" href="/@fs/.../packages/design-system/src/tokens.css" />
+<script type="module">
+  import "@mosaic/design-system";
+</script>
+
+<m-card>
+  <m-badge>New</m-badge>
+  <p>Runtime-composed storefront</p>
+  <m-button>Add to cart</m-button>
+  <m-button variant="ghost">Details</m-button>
+</m-card>
+```
+
+You should see:
+
+- A bordered card, a violet pill reading **New**, a solid violet button, and a ghost button — all drawing from `--m-color-primary: #8b5cf6`.
+- In DevTools, each `<m-button>` has a `#shadow-root (open)` with its own `<button>` inside.
+- Change `--m-color-primary` in the Elements panel and **every** primitive re-themes instantly — proof the token crossed the shadow boundary.
+
+Confirm the package type-checks and the workspace builds clean:
+
+```bash
+pnpm --filter @mosaic/design-system exec tsc --noEmit
+# then, from the shell:
+pnpm --filter shell build   # succeeds; the design-system source resolves through the workspace
+```
+
+**Check your understanding:**
+
+1. Why can a CSS custom property set on `:root` style the inside of a primitive's shadow DOM, when a normal class selector cannot?
+2. What breaks if two remotes both call `customElements.define("m-button", ...)`, and how does the `index.ts` guard prevent it?
+3. Why are tokens deliberately *global* (open to override) while a primitive's internal styles are deliberately *encapsulated* (shadow DOM)?
+4. Each `var(--m-color-primary, #8b5cf6)` carries a hard-coded fallback. What failure does that fallback protect against?
+
+## Recap
+
+We built `@mosaic/design-system`: tokens as CSS custom properties on `:root`, and three primitives — `<m-button>`, `<m-card>`, `<m-badge>` — as encapsulated custom elements that read those tokens through the shadow boundary. One definition, one look, no per-framework copy. Registration is idempotent so multiple remotes can import it safely.
+
+Next, we put these same tags to work in all three frameworks at once: [Consuming Everywhere →](/mosaic/en/design-system/consuming-everywhere/).

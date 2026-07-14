@@ -1,0 +1,257 @@
+---
+title: Tokens and Primitives
+description: "design token เป็น CSS custom property และ primitive แบบ Web Component แพ็กใน @mosaic/design-system"
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+design system ที่ใช้ร่วมกัน `@mosaic/design-system` ประกอบด้วยสอง layer ที่ทุก framework ใน Mosaic consume ได้:
+
+- **Design tokens** — ค่าดิบ (colour, spacing, radius) expose เป็น **CSS custom property**: `--m-color-primary`, `--m-space-3` เป็นต้น
+- **Primitives** — custom element แบบ **Web Component** ไม่กี่ตัวที่สร้างบน token พวกนั้น: `<m-button>`, `<m-card>`, `<m-badge>`
+
+catalog เป็น React, cart เป็น Svelte, content site เป็น Astro ถ้าแต่ละทีม style ปุ่มของตัวเอง Mosaic จะดูเหมือนสาม product ต่างกันมาเย็บติดกัน — ซึ่งในเชิงภาพคือสิ่งที่เรากำลังพยายามเลี่ยงพอดี token บวก custom element ให้ปุ่มเดียว นิยามครั้งเดียว ที่ render เหมือนกันทุกที่
+
+บทนี้สร้าง package และ primitive สามตัวของมัน เราเจอ pattern custom-element มาแล้วใน [Web Components Interop →](/mosaic/th/web-components/); ตรงนี้เราใช้มันอย่างตั้งใจเป็น shared-UI layer
+
+## Why
+
+design system สำหรับแอป **framework เดียว** ง่าย: ship React component library ไป Mosaic ทำแบบนั้นไม่ได้ เพราะ React `<Button>` render ข้างใน Svelte cart หรือหน้า Astro ไม่ได้ เราต้องการ primitive ที่มี runtime เป็น browser เอง
+
+สอง feature ของ web platform ทำให้มันทำงานร่วมกันได้:
+
+- **Custom elements** ห่อ structure และ behaviour ไว้หลัง DOM tag จริง (`<m-button>`) framework ไหนก็ render tag ได้
+- **CSS custom property inherit *ทะลุ* shadow boundary** token ที่ set บน `:root` เข้าถึงข้างใน shadow root ของทุก primitive ข้อเท็จจริงเดียวนั้นคือเหตุผลที่ token กับ shadow DOM ประกอบกันได้: primitive ยัง encapsulate อยู่ แต่ theme ยังไหลเข้าไปได้
+
+การแบ่งจึงตั้งใจ token เปิด (global, themeable, override ต่อ surface ได้); ภายในของ primitive ปิด (encapsulate ใน shadow DOM เพื่อไม่ให้ stylesheet ของ remote ตัวไหนรั่วเข้ามาทำมันพัง)
+
+## Pros & cons
+
+**Tokens as CSS custom properties vs. tokens as a JS/TS object**
+
+- **Pros:** CSS variable เป็น live และ cascade — set `--m-color-primary` บน wrapper แล้วทุกอย่างข้างใต้ re-theme โดยไม่ต้องมี JS มัน cross shadow boundary ฟรี shadow-DOM primitive จึงอ่านมันได้โดยไม่ต้องต่อสายอะไร
+- **Cons:** ไม่มี type checking ตอน import; พิมพ์ผิดแบบ `--m-colour-primary` fail เงียบ ๆ ไปที่ fallback คุณเสีย autocomplete ที่ typed token object จะให้
+
+**Primitives as Web Components vs. one component library per framework**
+
+- **Pros:** นิยามครั้งเดียว render โดย React, Svelte และ Astro เหมือนกัน ไม่ต้อง port ต่อ framework ให้คอย sync; ปุ่มจะ drift ระหว่างทีมไม่ได้
+- **Cons:** custom element เขียนยืดกว่า framework component และ form participation (label, `disabled`, focus) ต้องลงแรงตั้งใจซึ่ง native `<button>` ให้ฟรี
+
+## Set it up
+
+### 1. `packages/design-system/package.json`
+
+ESM package ธรรมดา ไม่ต้องมี build step ตอน dev — Vite consume `.ts` source ตรง ๆ ผ่าน workspace
+
+```json
+{
+  "name": "@mosaic/design-system",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens.css": "./src/tokens.css"
+  }
+}
+```
+
+### 2. `packages/design-system/src/tokens.css`
+
+token อยู่บน `:root` เพื่อให้ inherit ทุกที่ — รวมถึงเข้าไปใน shadow DOM ของทุก primitive
+
+```css
+:root {
+  /* Colour */
+  --m-color-primary: #8b5cf6;
+  --m-color-primary-ink: #ffffff;
+  --m-color-surface: #ffffff;
+  --m-color-border: #e5e7eb;
+  --m-color-text: #1f2937;
+  --m-color-muted: #6b7280;
+  --m-color-danger: #dc2626;
+
+  /* Spacing scale */
+  --m-space-1: 4px;
+  --m-space-2: 8px;
+  --m-space-3: 12px;
+  --m-space-4: 16px;
+
+  /* Shape & type */
+  --m-radius: 10px;
+  --m-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+```
+
+### 3. `packages/design-system/src/m-button.ts`
+
+custom element ที่มี shadow root แบบ encapsulate เราใช้ **constructable stylesheet** ที่ share ข้ามทุก instance และอ่าน token ทะลุ shadow boundary ตรง ๆ ผ่าน `var(--m-...)` — สังเกต fallback ไว้ด้วย เพื่อให้ปุ่มยังดูโอเคถ้า consumer ลืม import `tokens.css`
+
+```ts
+const sheet = new CSSStyleSheet();
+sheet.replaceSync(`
+  :host { display: inline-block; }
+  button {
+    font: 600 14px/1 var(--m-font, sans-serif);
+    color: var(--m-color-primary-ink, #fff);
+    background: var(--m-color-primary, #8b5cf6);
+    border: 0;
+    border-radius: var(--m-radius, 8px);
+    padding: var(--m-space-2, 8px) var(--m-space-4, 16px);
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.05); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  :host([variant="ghost"]) button {
+    background: transparent;
+    color: var(--m-color-primary, #8b5cf6);
+    box-shadow: inset 0 0 0 1px var(--m-color-border, #e5e7eb);
+  }
+`);
+
+export class MButton extends HTMLElement {
+  static observedAttributes = ["disabled"];
+
+  connectedCallback() {
+    if (this.shadowRoot) return; // already mounted
+    const root = this.attachShadow({ mode: "open" });
+    root.adoptedStyleSheets = [sheet];
+    root.innerHTML = `<button><slot></slot></button>`;
+    this.#sync();
+  }
+
+  attributeChangedCallback() {
+    this.#sync();
+  }
+
+  #sync() {
+    const btn = this.shadowRoot?.querySelector("button");
+    if (btn) btn.disabled = this.hasAttribute("disabled");
+  }
+}
+```
+
+### 4. `packages/design-system/src/m-card.ts` and `m-badge.ts`
+
+`<m-card>` เป็น container ที่มี slot; `<m-badge>` เป็น pill ติด label เล็ก ๆ พร้อม attribute `tone`
+
+```ts
+// m-card.ts
+const cardSheet = new CSSStyleSheet();
+cardSheet.replaceSync(`
+  :host {
+    display: block;
+    background: var(--m-color-surface, #fff);
+    border: 1px solid var(--m-color-border, #e5e7eb);
+    border-radius: var(--m-radius, 8px);
+    padding: var(--m-space-4, 16px);
+    color: var(--m-color-text, #1f2937);
+  }
+`);
+
+export class MCard extends HTMLElement {
+  connectedCallback() {
+    if (this.shadowRoot) return;
+    const root = this.attachShadow({ mode: "open" });
+    root.adoptedStyleSheets = [cardSheet];
+    root.innerHTML = `<slot></slot>`;
+  }
+}
+```
+
+```ts
+// m-badge.ts
+const badgeSheet = new CSSStyleSheet();
+badgeSheet.replaceSync(`
+  :host {
+    display: inline-block;
+    font: 600 12px/1 var(--m-font, sans-serif);
+    padding: var(--m-space-1, 4px) var(--m-space-2, 8px);
+    border-radius: 999px;
+    background: var(--m-color-primary, #8b5cf6);
+    color: var(--m-color-primary-ink, #fff);
+  }
+  :host([tone="danger"]) { background: var(--m-color-danger, #dc2626); }
+`);
+
+export class MBadge extends HTMLElement {
+  connectedCallback() {
+    if (this.shadowRoot) return;
+    const root = this.attachShadow({ mode: "open" });
+    root.adoptedStyleSheets = [badgeSheet];
+    root.innerHTML = `<slot></slot>`;
+  }
+}
+```
+
+### 5. `packages/design-system/src/index.ts`
+
+entry point register ทุก primitive ครั้งเดียว guard `customElements.get` สำคัญใน micro-frontend: remote สองตัวอาจต่าง import package และการ define tag เดิมซ้ำจะ throw
+
+```ts
+import { MButton } from "./m-button.js";
+import { MCard } from "./m-card.js";
+import { MBadge } from "./m-badge.js";
+
+function define(tag: string, ctor: CustomElementConstructor) {
+  if (!customElements.get(tag)) customElements.define(tag, ctor);
+}
+
+define("m-button", MButton);
+define("m-card", MCard);
+define("m-badge", MBadge);
+
+export { MButton, MCard, MBadge };
+```
+
+## Verify
+
+install workspace แล้ว register primitive จากแอปตัวไหนก็ได้ที่พึ่ง `@mosaic/design-system`
+
+```bash
+pnpm --filter @mosaic/design-system install
+```
+
+ในหน้า HTML แบบ scratch (หรือ `index.html` ของ shell) import token และตัว registrar แล้ววาง tag ลงไป:
+
+```html
+<link rel="stylesheet" href="/@fs/.../packages/design-system/src/tokens.css" />
+<script type="module">
+  import "@mosaic/design-system";
+</script>
+
+<m-card>
+  <m-badge>New</m-badge>
+  <p>Runtime-composed storefront</p>
+  <m-button>Add to cart</m-button>
+  <m-button variant="ghost">Details</m-button>
+</m-card>
+```
+
+คุณควรเห็น:
+
+- card ที่มี border, pill สีม่วงอ่านว่า **New**, ปุ่มสีม่วงทึบ และปุ่ม ghost — ทั้งหมดดึงจาก `--m-color-primary: #8b5cf6`
+- ใน DevTools แต่ละ `<m-button>` มี `#shadow-root (open)` พร้อม `<button>` ของตัวเองข้างใน
+- เปลี่ยน `--m-color-primary` ใน Elements panel แล้ว primitive **ทุกตัว** re-theme ทันที — พิสูจน์ว่า token ข้าม shadow boundary ไปแล้ว
+
+ยืนยันว่า package type-check ผ่านและ workspace build สะอาด:
+
+```bash
+pnpm --filter @mosaic/design-system exec tsc --noEmit
+# then, from the shell:
+pnpm --filter shell build   # succeeds; the design-system source resolves through the workspace
+```
+
+**Check your understanding:**
+
+1. ทำไม CSS custom property ที่ set บน `:root` style ข้างใน shadow DOM ของ primitive ได้ ในเมื่อ class selector ธรรมดาทำไม่ได้?
+2. อะไรพังถ้า remote สองตัวต่างเรียก `customElements.define("m-button", ...)` และ guard ใน `index.ts` ป้องกันมันยังไง?
+3. ทำไม token จึงตั้งใจให้ *global* (เปิดให้ override) ในขณะที่ internal style ของ primitive ตั้งใจให้ *encapsulate* (shadow DOM)?
+4. `var(--m-color-primary, #8b5cf6)` แต่ละตัวพก fallback ที่ hard-code ไว้ fallback นั้นป้องกัน failure แบบไหน?
+
+## Recap
+
+เราสร้าง `@mosaic/design-system`: token เป็น CSS custom property บน `:root` และ primitive สามตัว — `<m-button>`, `<m-card>`, `<m-badge>` — เป็น custom element แบบ encapsulate ที่อ่าน token พวกนั้นทะลุ shadow boundary นิยามเดียว หน้าตาเดียว ไม่มี copy ต่อ framework การ register เป็น idempotent เพื่อให้หลาย remote import ได้อย่างปลอดภัย
+
+ต่อไปเราเอา tag ชุดเดียวกันนี้ไปใช้งานในทั้งสาม framework พร้อมกัน: [Consuming Everywhere →](/mosaic/th/design-system/consuming-everywhere/)

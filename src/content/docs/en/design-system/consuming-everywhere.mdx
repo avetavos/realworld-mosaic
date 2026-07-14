@@ -1,0 +1,138 @@
+---
+title: Consuming Everywhere
+description: "Render the same @mosaic/design-system custom elements in React, Svelte, and Astro for one consistent look."
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+The same three primitives — `<m-button>`, `<m-card>`, `<m-badge>` from [Tokens and Primitives →](/mosaic/en/design-system/tokens-and-primitives/) — rendered from **React** (the catalog and shell), **Svelte** (the cart), and **Astro** (the content site). One package, imported three ways, producing pixel-identical UI across three runtimes.
+
+This is the payoff of choosing custom elements as Mosaic's shared-UI layer, first introduced in [Web Components Interop →](/mosaic/en/web-components/). Here we prove it end to end.
+
+## Why
+
+Every framework in Mosaic ultimately renders **DOM**. A custom element *is* DOM — a real tag the browser understands — so every framework can produce it with its own templating syntax and no adapter. That's the whole argument: the shared layer sits *below* the frameworks, at the platform, where all three already agree.
+
+The alternative — a React component library — would force the Svelte and Astro teams to reimplement or wrap every component, and those copies would drift. With custom elements there is nothing to port. The framework's job shrinks to "emit the tag and pass attributes"; the primitive's shadow DOM does the rest.
+
+One caveat worth stating up front: passing **rich data** (objects, arrays) to a custom element differs by framework. Attributes are strings. React 19 and Svelte 5 both set JS **properties** on custom elements when the value isn't a string, which handles objects cleanly; older React needs a `ref` to set properties manually. For Mosaic's primitives we keep the public API attribute-friendly (strings, booleans, slots), which sidesteps the problem entirely.
+
+## Pros & cons
+
+**Custom elements as the shared layer vs. a per-framework component library**
+
+- **Pros:** Author once, render in any framework; no wrappers, no drift, no framework runtime shipped with the design system. The primitive upgrades for every team at once when the package updates.
+- **Cons:** The ergonomics are lower than native framework components — no typed props, event handling is `addEventListener`-shaped, and SSR of shadow DOM needs care (declarative shadow DOM). You trade developer sugar for universality.
+
+**One shared token sheet vs. each app theming itself**
+
+- **Pros:** `tokens.css` imported once per app means all three surfaces read `#8b5cf6` from the same source; rebrand in one file.
+- **Cons:** Each app must remember to import the sheet; forget it and that surface silently falls back to the primitives' hard-coded defaults instead of failing loudly.
+
+## Set it up
+
+Every app installs the package and imports `tokens.css` once at its entry, then registers the primitives.
+
+### 1. `apps/catalog/src/main.tsx` (React)
+
+React renders custom elements as ordinary JSX tags. Attributes map straight through; `slot` children are just children. React 19 improved custom-element support, so boolean/attribute props behave as you'd expect.
+
+```tsx
+import "@mosaic/design-system/tokens.css";
+import "@mosaic/design-system"; // registers <m-button>, <m-card>, <m-badge>
+
+export function ProductCard({ name, isNew }: { name: string; isNew: boolean }) {
+  return (
+    <m-card>
+      {isNew && <m-badge>New</m-badge>}
+      <p>{name}</p>
+      <m-button onClick={() => bus.emit("cart:add", { name })}>
+        Add to cart
+      </m-button>
+    </m-card>
+  );
+}
+```
+
+### 2. `apps/cart/src/Summary.svelte` (Svelte 5)
+
+Svelte renders custom elements natively — no import ceremony beyond registering the package. Note the primitives here are the *design-system* custom elements, distinct from the cart remote's own `<cart-app>` element from [Mount via Web Component →](/mosaic/en/cart/mount-via-web-component/).
+
+```svelte
+<script lang="ts">
+  import "@mosaic/design-system/tokens.css";
+  import "@mosaic/design-system";
+
+  let { items = [] } = $props();
+</script>
+
+<m-card>
+  <m-badge tone="danger">{items.length}</m-badge>
+  {#each items as item}
+    <p>{item.name}</p>
+  {/each}
+  <m-button>Checkout</m-button>
+</m-card>
+```
+
+### 3. `apps/content/src/pages/index.astro` (Astro)
+
+Astro ships zero client JS by default, so we register the primitives in a module `<script>`. The tags render as plain HTML on the server; the custom-element definition upgrades them on the client. This is the same WC bundle Astro exposes for the composition path (see [Composing SSR →](/mosaic/en/content/composing-ssr/)).
+
+```astro
+---
+import "@mosaic/design-system/tokens.css";
+---
+
+<m-card>
+  <m-badge>Sale</m-badge>
+  <p>Independent teams, one storefront.</p>
+  <m-button>Shop the catalog</m-button>
+</m-card>
+
+<script>
+  import "@mosaic/design-system"; // upgrades the tags on the client
+</script>
+```
+
+### 4. Why this is the right shared layer for multi-framework MFE
+
+Pull back and the pattern is clear: the primitive is defined **once**, in a framework-neutral package, and each MFE only *names* it. There is no shared React tree, no cross-framework prop plumbing, no build-time coupling between the design system and any app — exactly the decoupling the rest of Mosaic is built on. The design system deploys on its own cadence, and because tags are resolved by the browser's `customElements` registry at runtime, a new primitive version reaches every remote the same way a new remote reaches the shell: on next load.
+
+## Verify
+
+Run any two apps side by side and compare a shared primitive.
+
+```bash
+pnpm --filter catalog dev   # React,  http://localhost:5001
+pnpm --filter cart dev      # Svelte, http://localhost:5002
+pnpm --filter content dev   # Astro,  http://localhost:5003
+```
+
+Then check:
+
+- The `<m-button>` in the React catalog, the Svelte cart, and the Astro page are **visually identical** — same violet, radius, padding — because all three read the same `tokens.css`.
+- In each app's DevTools, the button carries an open shadow root; the framework only rendered the outer tag.
+- Temporarily comment out `import "@mosaic/design-system/tokens.css"` in one app: that surface falls back to the primitives' built-in defaults while the others stay themed — visible proof the token sheet is the single source of truth.
+
+Confirm each app still builds with the shared package wired in:
+
+```bash
+pnpm --filter catalog build && pnpm --filter cart build && pnpm --filter content build
+# all three succeed
+```
+
+**Check your understanding:**
+
+1. Why does *no* framework need an adapter to render `<m-button>`, when each needs its own components for everything else?
+2. Astro registers the primitives inside a `<script>` while React imports at the entry module. Why the difference, and what does each achieve?
+3. Passing a string attribute to a custom element works identically everywhere; passing an object does not. Why, and how does keeping the primitives' API attribute-friendly sidestep it?
+4. If the design-system package ships a new `<m-button>` style, how does that reach the catalog, cart, and content apps — and how is that like the way a new remote reaches the shell?
+
+## Recap
+
+We rendered `@mosaic/design-system` primitives from React, Svelte, and Astro with no per-framework wrappers — one definition, three runtimes, one consistent look. Custom elements are the right shared-UI layer for multi-framework micro-frontends precisely because they live below the frameworks, at the browser, where every team already agrees.
+
+That covers shared *look*. Next we coordinate shared *navigation*: how the shell and the remotes split up the URL in [Routing Across MFEs →](/mosaic/en/routing/).
