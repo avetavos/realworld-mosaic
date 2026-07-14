@@ -1,0 +1,177 @@
+---
+title: The Catalog BFF
+description: "ให้ catalog remote มี Hono backend บาง ๆ ของตัวเองแล้ว fetch product data จริง — vertical slice เต็มรูปแบบ"
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+**backend-for-frontend** ของ catalog: Hono service เล็ก ๆ บน port 4001 ที่ serve `GET /api/products` และ `GET /api/products/:id` จาก in-memory data แล้วเราต่อสาย [catalog remote](/mosaic/th/catalog/the-catalog-remote/) ใหม่ให้ fetch จาก endpoint นั้นแทนการใช้ array ที่ hard-code ไว้
+
+ประเด็นของบทนี้คือ **vertical slice** หลังจากนี้ catalog เป็นเจ้าของทั้งสองครึ่งของ feature ตัวเอง — ทั้ง UI *และ* data ที่ป้อนให้มัน — แล้ว deploy ได้จบครบวงจรโดยไม่ต้องแตะโค้ดของทีมอื่นเลย
+
+## Why
+
+micro-frontend ที่เอื้อมไปหา API ส่วนกลางที่ share กันนั้นอิสระแค่ครึ่งเดียว: เปลี่ยน shape ของ product แล้วคุณต้องไปประสานงานกับคนที่เป็นเจ้าของ API นั้นทันที **BFF บาง ๆ ต่อหนึ่ง remote** ตัดสายนั้นทิ้ง BFF ของ catalog มีอยู่เพื่อ serve สิ่งที่ catalog UI ต้องการเป๊ะ ๆ ใน shape ที่มันอยากได้เป๊ะ ๆ เป็นเจ้าของโดยทีมเดียวกัน deploy ใน slice เดียวกัน
+
+Hono เป็นเครื่องมือที่ถูกต้องเพราะมันเล็กและน่าเบื่อ — route ไม่กี่ตัวบน `Request`/`Response` มาตรฐาน Web รันบน Node ด้วย `@hono/node-server` ไม่มีพิธีรีตองของ framework มากวนใจให้เขวจาก architecture BFF ไม่ใช่จุดที่ engineering น่าสนใจอยู่ การเก็บมันให้บางคือประเด็นทั้งหมด
+
+มีการตัดสินใจจริงหนึ่งอย่างโผล่ขึ้นมาตรงนี้: **remote เอื้อมไปหา BFF ของมันยังไง** เมื่อ catalog รันแยกเดี่ยว ๆ บน 5001 การใช้ `/api/products` แบบ relative ก็ง่าย แต่พอ [shell](/mosaic/th/shell/) mount remote เข้าไป origin ของหน้าคือ 5000 — relative fetch จะไปโดน shell ไม่ใช่ BFF ของ catalog ดังนั้น remote จึง fetch BFF ที่ **absolute origin ที่ตั้งค่าได้** และ BFF เปิด CORS นี่คือ pattern ที่รอดจาก federation และเป็นสิ่งที่ [Independent Deployment](/mosaic/th/deployment/) ในภายหลังจะชี้ไปที่ URL ที่ deploy แล้วผ่าน env
+
+## Pros & cons
+
+**A thin BFF per remote vs. one shared central API**
+
+- **Pros:** ทีม catalog เป็นเจ้าของ data contract ของตัวเองครบวงจร แล้ว ship UI + API ไปด้วยกันใน deploy เดียว BFF สามารถ reshape, aggregate, และตัด data ต้นทางให้เหลือเท่าที่ UI นี้ render จริง ๆ — ไม่ over-fetch, ไม่ต้องขอ change ข้ามทีม
+- **Cons:** มี service ให้รันและ deploy มากขึ้น และ logic อาจซ้ำกันข้าม BFF หลายตัว คุณแลก single source of truth ไปกับความเป็นอิสระของทีม — คุ้มเมื่อทีม ship อิสระ เปลืองเมื่อทีมเดียวเป็นเจ้าของทุกอย่าง
+
+**Fetching the BFF at an absolute origin vs. a relative `/api` path**
+
+- **Pros:** absolute origin ที่ตั้งค่าผ่าน env ทำงานเหมือนกันเป๊ะ ไม่ว่า remote จะรันแยกเดี่ยวหรือ mount อยู่ใน host คนละ origin มันคือกลไกเดียวกับที่คุณจะชี้ไป production URL ใน Module 13
+- **Cons:** มันบังคับให้คุณต้องจัดการ CORS และร้อย env var ผ่านเข้าไป การใช้ `/api` แบบ relative กับ Vite dev proxy ตั้งค่าน้อยกว่า — แต่มันพังเงียบ ๆ ทันทีที่ remote ถูก federate เข้าไปใน host บน origin อื่น ซึ่งเป็นเหตุผลทั้งหมดที่ remote นี้มีอยู่
+
+## Set it up
+
+### 1. `apps/catalog/bff/products.ts`
+
+in-memory data — source เดียวที่ BFF serve
+
+```ts
+export type Product = {
+  id: string;
+  name: string;
+  priceCents: number;
+  blurb: string;
+};
+
+export const products: Product[] = [
+  { id: 'p1', name: 'Aurora Mug', priceCents: 1299, blurb: 'Double-walled, keeps coffee warm for hours.' },
+  { id: 'p2', name: 'Nomad Backpack', priceCents: 8900, blurb: 'Water-resistant, fits a 15-inch laptop.' },
+  { id: 'p3', name: 'Terra Notebook', priceCents: 1499, blurb: 'Recycled paper, lies flat when open.' },
+  { id: 'p4', name: 'Halcyon Lamp', priceCents: 5400, blurb: 'Warm dimmable LED, USB-C powered.' },
+];
+```
+
+### 2. `apps/catalog/bff/server.ts`
+
+Hono app: สอง route, CORS สำหรับ path `/api/*` (เพื่อให้ origin ของ shell เรียกมันได้) serve บน 4001 ด้วย `@hono/node-server`
+
+```ts
+import { serve } from '@hono/node-server';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { products } from './products';
+
+const app = new Hono();
+
+app.use('/api/*', cors());
+
+app.get('/api/products', (c) => c.json(products));
+
+app.get('/api/products/:id', (c) => {
+  const product = products.find((p) => p.id === c.req.param('id'));
+  if (!product) return c.json({ error: 'not found' }, 404);
+  return c.json(product);
+});
+
+serve({ fetch: app.fetch, port: 4001 }, (info) => {
+  console.log(`catalog BFF on http://localhost:${info.port}`);
+});
+```
+
+### 3. `apps/catalog/src/Catalog.tsx`
+
+แทน array ที่ hard-code ไว้ด้วย fetch ไปที่ absolute origin ของ BFF base URL มาจาก env var เพื่อให้ Module 13 สลับ URL ที่ deploy แล้วเข้ามาได้โดยไม่ต้องแก้โค้ด
+
+```tsx
+import { useEffect, useState } from 'react';
+
+type Product = { id: string; name: string; priceCents: number };
+
+const BFF = import.meta.env.VITE_CATALOG_BFF ?? 'http://localhost:4001';
+
+export default function Catalog() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${BFF}/api/products`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json() as Promise<Product[]>;
+      })
+      .then(setProducts)
+      .catch((err) => setError(String(err)));
+  }, []);
+
+  if (error) {
+    return <p role="alert">Couldn’t load products: {error}</p>;
+  }
+
+  return (
+    <section className="catalog">
+      <h2>Products</h2>
+      <ul className="catalog__grid">
+        {products.map((product) => (
+          <li key={product.id} className="catalog__card">
+            <h3>{product.name}</h3>
+            <p className="catalog__price">
+              ${(product.priceCents / 100).toFixed(2)}
+            </p>
+            <button type="button">Add to cart</button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+```
+
+## Verify
+
+เริ่ม BFF แล้วยิงทั้งสอง route ตรง ๆ:
+
+```bash
+pnpm --filter catalog dev:bff
+# catalog BFF on http://localhost:4001
+```
+
+```bash
+curl -s http://localhost:4001/api/products
+# [{"id":"p1","name":"Aurora Mug","priceCents":1299,"blurb":"..."}, ...]
+
+curl -s http://localhost:4001/api/products/p1
+# {"id":"p1","name":"Aurora Mug","priceCents":1299,"blurb":"..."}
+
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4001/api/products/nope
+# 404
+```
+
+ตอนนี้รัน remote กับ BFF ด้วยกันแล้วโหลด catalog ใน shell — grid ควร render จาก data ที่ fetch มา และ CORS header ควรยอมให้ origin ของ shell (5000) อ่านมันได้:
+
+```bash
+pnpm --filter catalog dev        # remote on 5001
+pnpm --filter catalog dev:bff    # BFF on 4001
+pnpm --filter shell dev          # shell on 5000 — open the catalog page
+# The four cards now come from the BFF. Stop the BFF and reload:
+# the remote shows "Couldn’t load products" instead of crashing the shell.
+```
+
+ยืนยันว่าทั้งสองครึ่งของ slice ยัง build ผ่าน:
+
+```bash
+pnpm --filter catalog build
+# vite build (the remote) completes; the BFF is plain TS run by node-server.
+```
+
+ตรวจสอบความเข้าใจ:
+
+1. ทำไมแต่ละ remote ถึงได้ BFF บาง ๆ ของตัวเอง แทนที่จะให้ทุก remote เรียก API ส่วนกลางตัวเดียว?
+2. เมื่อ remote ถูก mount ใน shell ทำไม `fetch('/api/products')` แบบ relative ถึงไปโดน server ผิดตัว — และวิธี absolute-origin แก้อะไร?
+3. ทำไม BFF ถึงต้องมี `cors()` บน `/api/*` ทั้งที่ remote กับ BFF เป็นโค้ดของทีมเดียวกัน?
+4. อะไรทำให้ catalog เป็น "vertical slice" ตอนนี้ ที่มันยังไม่เป็นในบทก่อน?
+
+## Recap
+
+catalog เป็น vertical slice ที่สมบูรณ์: React remote ที่ federate เข้าไปใน shell มี Hono BFF ของตัวเองหนุนหลัง fetch data จริงข้าม CORS boundary ที่ origin ที่ตั้งค่าได้ — deploy ได้ครบวงจรด้วยตัวเอง จนถึงตอนนี้ทุก remote เป็น React ที่ mount เข้าไปใน host ที่เป็น React ต่อไปเราจะทำลายสมมติฐานนั้น: [Web Components Interop →](/mosaic/th/web-components/) ทำให้ remote ถูก mount ได้โดย framework *ใดก็ได้*

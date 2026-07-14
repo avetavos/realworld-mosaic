@@ -1,0 +1,171 @@
+---
+title: The Catalog Remote
+description: "สร้าง federated remote ตัวแรก — React catalog ที่ expose product grid ให้ shell mount ตอน runtime"
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+catalog คือ **remote** ตัวจริงตัวแรกของ Mosaic: React + Vite app ที่รันแยกเดี่ยว ๆ แล้ว expose component ตัวเดียว — `<Catalog>` ซึ่งเป็น product grid — ออกมาเป็น federated module มันรันบน port ของตัวเอง (5001) build `remoteEntry.js` ของตัวเอง แล้ว [shell](/mosaic/th/shell/) โหลดมันตอน runtime แล้ววางลงในหน้า ไม่มีใคร import catalog ตอน build time เลย shell ค้นเจอมันผ่าน HTTP
+
+ในบทนี้ grid render product list สั้น ๆ ที่ hard-code ไว้ เพื่อให้เราโฟกัสที่ federation boundary [บทถัดไป](/mosaic/th/catalog/catalog-bff/) จะให้ remote มี Hono BFF ของตัวเองแล้วทำให้ data เป็นของจริง — เปลี่ยนมันเป็น vertical slice เต็มรูปแบบ
+
+## Why
+
+เราเรียนกลไกไปแล้วใน [Module Federation Core](/mosaic/th/federation/): expose module, consume มันจาก `remoteEntry.js`, share `react` เป็น singleton catalog คือจุดที่ของพวกนี้เลิกเป็น `./Widget` ของเล่น แล้วกลายเป็น feature จริงที่ทีมหนึ่งเป็นเจ้าของ
+
+การ expose **React component** (ไม่ใช่ custom element) เป็นทางเลือกที่ถูกตรงนี้ เพราะ host ก็เป็น React เมื่อทั้งสองฝั่ง share `react`/`react-dom` singleton ตัวเดียวกัน component ของ remote ก็เป็นแค่ component ตัวหนึ่งสำหรับ shell — มันรับ props, โยน error ไปที่ error boundary, และเข้าร่วม Suspense เหมือน component local ทั่วไป การ interop แบบ framework เดียวกันที่แนบแน่นนี้คือ remote ที่เรียบง่ายที่สุดเท่าที่จะเป็นได้ ซึ่งเป็นเหตุผลว่าทำไมมันถึงเป็นตัวแรกที่ควรสร้าง (Module 5 จะขยายไปสู่เคสที่ framework-agnostic)
+
+## Pros & cons
+
+**Exposing a React component vs. exposing a custom element**
+
+- **Pros:** shell render `<Catalog />` ได้ตรง ๆ — props, context, Suspense, และ error boundary ทำงานได้หมดโดยไม่ต้องมี glue เลย React instance เดียวที่ share กันแปลว่าไม่มีการ render ซ้ำ และไม่มี runtime ซ้ำถูกส่งไปที่ browser
+- **Cons:** มันทำงานได้เพราะ host เป็น React เท่านั้น host ที่เป็น Vue หรือ Svelte จะ consume remote นี้ไม่ได้ถ้าไม่มี wrapper คุณแลกความเป็นสากลไปกับความเรียบง่าย — ตอนนี้โอเค แต่นี่คือเหตุผลที่ Module 5 มีอยู่
+
+**Runtime federation vs. publishing the catalog as an npm package**
+
+- **Pros:** federated remote deploy อิสระได้ ship catalog ตัวใหม่แล้ว shell หยิบมันขึ้นมาในการโหลดครั้งถัดไป — ไม่ต้อง rebuild shell, ไม่ต้อง bump version, ไม่ต้อง release พร้อมกัน
+- **Cons:** ตอนนี้คุณพึ่ง network fetch ตอน runtime ดังนั้น remote อาจช้าหรือเข้าถึงไม่ได้ (ปัญหาของ Module 12) npm package เข้าใจง่ายกว่า แต่มันผูกทุก consumer เข้ากับวงจร rebuild-แล้ว-redeploy — การผูกกันแบบนี้แหละที่ micro-frontend เกิดมาเพื่อทำลาย
+
+## Set it up
+
+### 1. `apps/catalog/vite.config.ts`
+
+federation config ของ remote มันตั้งชื่อตัวเอง, เขียน `remoteEntry.js`, expose `./Catalog`, และ share React เพื่อให้ singleton ของ host ถูกใช้ซ้ำ `server.origin` ต้องตรงกับ port เพื่อให้ asset URL ที่ถูก generate เป็น absolute และถูกต้อง
+
+```ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { federation } from '@module-federation/vite';
+
+export default defineConfig({
+  plugins: [
+    react(),
+    federation({
+      name: 'catalog',
+      filename: 'remoteEntry.js',
+      exposes: {
+        './Catalog': './src/Catalog.tsx',
+      },
+      shared: ['react', 'react-dom'],
+    }),
+  ],
+  server: {
+    port: 5001,
+    origin: 'http://localhost:5001',
+  },
+  build: {
+    target: 'esnext',
+  },
+});
+```
+
+### 2. `apps/catalog/src/Catalog.tsx`
+
+component ที่ expose ออกมา: product grid ตอนนี้ data เป็น local — array คงที่ — เพื่อให้เราตรวจ federation boundary ได้ก่อนต่อสาย backend
+
+```tsx
+type Product = { id: string; name: string; priceCents: number };
+
+const PRODUCTS: Product[] = [
+  { id: 'p1', name: 'Aurora Mug', priceCents: 1299 },
+  { id: 'p2', name: 'Nomad Backpack', priceCents: 8900 },
+  { id: 'p3', name: 'Terra Notebook', priceCents: 1499 },
+  { id: 'p4', name: 'Halcyon Lamp', priceCents: 5400 },
+];
+
+export default function Catalog() {
+  return (
+    <section className="catalog">
+      <h2>Products</h2>
+      <ul className="catalog__grid">
+        {PRODUCTS.map((product) => (
+          <li key={product.id} className="catalog__card">
+            <h3>{product.name}</h3>
+            <p className="catalog__price">
+              ${(product.priceCents / 100).toFixed(2)}
+            </p>
+            <button type="button">Add to cart</button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+```
+
+### 3. `apps/shell/src/remotes.d.ts`
+
+shell consume `catalog/Catalog` ผ่าน network ดังนั้น TypeScript ต้องมี declaration สำหรับ virtual module นี้
+
+```ts
+declare module 'catalog/Catalog' {
+  import type { ComponentType } from 'react';
+  const Catalog: ComponentType;
+  export default Catalog;
+}
+```
+
+### 4. `apps/shell/src/CatalogRoute.tsx`
+
+mount remote ตามที่ [shell's host config](/mosaic/th/shell/) ตั้งไว้เป๊ะ ๆ: `React.lazy` บน dynamic import แล้ว wrap ด้วย `<Suspense>` เพื่อให้ shell แสดง fallback ระหว่างที่ `remoteEntry.js` กับ chunk กำลังโหลด
+
+```tsx
+import { lazy, Suspense } from 'react';
+
+const Catalog = lazy(() => import('catalog/Catalog'));
+
+export function CatalogRoute() {
+  return (
+    <Suspense fallback={<p>Loading catalog…</p>}>
+      <Catalog />
+    </Suspense>
+  );
+}
+```
+
+## Verify
+
+เริ่ม remote แยกเดี่ยว ๆ แล้วยืนยันว่ามัน publish manifest:
+
+```bash
+pnpm --filter catalog dev
+# Vite dev server running at http://localhost:5001
+```
+
+```bash
+curl -s http://localhost:5001/remoteEntry.js | head -n 3
+# JavaScript for the remote entry — the module the shell will import.
+# A 200 with JS here means the remote is federating correctly.
+```
+
+ตอนนี้รัน shell ควบคู่ไปด้วยแล้วโหลด catalog route:
+
+```bash
+pnpm --filter shell dev
+# Shell at http://localhost:5000 — open the catalog page.
+# You should see the four-card product grid rendered by the remote,
+# after a brief "Loading catalog…" fallback on first load.
+```
+
+สุดท้าย พิสูจน์ว่า remote build เป็น artifact จริงที่ deploy ได้:
+
+```bash
+pnpm --filter catalog build
+# vite build completes; dist/ contains remoteEntry.js plus the exposed chunk.
+```
+
+ถ้า grid render อยู่ใน shell แต่โค้ดอยู่ใน `apps/catalog` แสดงว่า boundary ทำงาน — shell กำลังรัน component ที่มันไม่เคย import ตอน build time
+
+ตรวจสอบความเข้าใจ:
+
+1. ทำไม shell ถึงเห็น `<Catalog />` เป็น React component ธรรมดา แทนที่จะเป็นอะไรที่มันต้อง wrap หรือ bridge?
+2. `server.origin` ใน Vite config ของ remote มีบทบาทอะไร และอะไรจะพังถ้ามันไม่ตรงกับ port?
+3. ทำไมต้อง wrap การ import `<Catalog>` ด้วย `React.lazy` + `<Suspense>` แทนที่จะเป็น top-level `import` ธรรมดา?
+4. remote นี้ consume ได้เฉพาะ host ที่เป็น React module ตัวไหนในภายหลังที่ลบข้อจำกัดนี้ออก และมันใช้ boundary แบบไหนแทน?
+
+## Recap
+
+ตอนนี้ catalog เป็น federated remote ของจริงแล้ว: React app ที่ expose `<Catalog>` grid และ shell ที่ mount มันตอน runtime ด้วย `React.lazy` + `<Suspense>` โดย share React singleton ตัวเดียว มันเป็น deploy อิสระอยู่แล้ว — แต่ data ยังปลอมอยู่ ต่อไป ให้มันมี backend ของตัวเองแล้วเติม vertical slice ให้ครบใน [The Catalog BFF →](/mosaic/th/catalog/catalog-bff/)

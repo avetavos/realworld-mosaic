@@ -1,0 +1,177 @@
+---
+title: The Catalog BFF
+description: "Give the catalog remote its own thin Hono backend and fetch real product data — a full vertical slice."
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+A **backend-for-frontend** for the catalog: a tiny Hono service on port 4001 that serves `GET /api/products` and `GET /api/products/:id` from in-memory data. Then we rewire the [catalog remote](/mosaic/en/catalog/the-catalog-remote/) to fetch that endpoint instead of using its hard-coded array.
+
+The point of this lesson is the **vertical slice**. After it, the catalog owns both halves of its feature — the UI *and* the data that feeds it — and deploys end to end without touching any other team's code.
+
+## Why
+
+A micro-frontend that reaches into a shared, central API is only half-independent: change the shape of a product and you're now coordinating with whoever owns that API. A **thin BFF per remote** cuts that cord. The catalog's BFF exists to serve exactly what the catalog UI needs, in exactly the shape it wants, owned by the same team, deployed in the same slice.
+
+Hono is the right tool because it's tiny and boring — a few routes over Web-standard `Request`/`Response`, run on Node with `@hono/node-server`. There's no framework ceremony to distract from the architecture. The BFF isn't where the interesting engineering lives; keeping it thin is the whole point.
+
+One real decision surfaces here: **how the remote reaches its BFF**. When the catalog runs standalone on 5001, a relative `/api/products` is easy. But once the [shell](/mosaic/en/shell/) mounts the remote, the page origin is 5000 — a relative fetch would hit the shell, not the catalog's BFF. So the remote fetches its BFF at an **absolute, configurable origin**, and the BFF enables CORS. That's the pattern that survives federation, and it's what [Independent Deployment](/mosaic/en/deployment/) later points at a deployed URL via env.
+
+## Pros & cons
+
+**A thin BFF per remote vs. one shared central API**
+
+- **Pros:** The catalog team owns its data contract end to end and ships UI + API together in one deploy. The BFF can reshape, aggregate, and trim upstream data to exactly what this UI renders — no over-fetching, no cross-team change requests.
+- **Cons:** More services to run and deploy, and logic can get duplicated across BFFs. You're trading a single source of truth for team autonomy — worth it when teams ship independently, wasteful when one team owns everything.
+
+**Fetching the BFF at an absolute origin vs. a relative `/api` path**
+
+- **Pros:** An absolute, env-configured origin works identically whether the remote runs standalone or mounted in a different-origin host. It's the same mechanism you'll point at a production URL in Module 13.
+- **Cons:** It forces you to handle CORS and to thread an env var through. A relative `/api` with a Vite dev proxy is less setup — but it silently breaks the moment the remote is federated into a host on another origin, which is the whole reason this remote exists.
+
+## Set it up
+
+### 1. `apps/catalog/bff/products.ts`
+
+The in-memory data — the single source the BFF serves.
+
+```ts
+export type Product = {
+  id: string;
+  name: string;
+  priceCents: number;
+  blurb: string;
+};
+
+export const products: Product[] = [
+  { id: 'p1', name: 'Aurora Mug', priceCents: 1299, blurb: 'Double-walled, keeps coffee warm for hours.' },
+  { id: 'p2', name: 'Nomad Backpack', priceCents: 8900, blurb: 'Water-resistant, fits a 15-inch laptop.' },
+  { id: 'p3', name: 'Terra Notebook', priceCents: 1499, blurb: 'Recycled paper, lies flat when open.' },
+  { id: 'p4', name: 'Halcyon Lamp', priceCents: 5400, blurb: 'Warm dimmable LED, USB-C powered.' },
+];
+```
+
+### 2. `apps/catalog/bff/server.ts`
+
+The Hono app: two routes, CORS for the `/api/*` paths (so the shell's origin can call it), served on 4001 with `@hono/node-server`.
+
+```ts
+import { serve } from '@hono/node-server';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { products } from './products';
+
+const app = new Hono();
+
+app.use('/api/*', cors());
+
+app.get('/api/products', (c) => c.json(products));
+
+app.get('/api/products/:id', (c) => {
+  const product = products.find((p) => p.id === c.req.param('id'));
+  if (!product) return c.json({ error: 'not found' }, 404);
+  return c.json(product);
+});
+
+serve({ fetch: app.fetch, port: 4001 }, (info) => {
+  console.log(`catalog BFF on http://localhost:${info.port}`);
+});
+```
+
+### 3. `apps/catalog/src/Catalog.tsx`
+
+Replace the hard-coded array with a fetch against the BFF's absolute origin. The base URL comes from an env var so Module 13 can swap in a deployed URL without a code change.
+
+```tsx
+import { useEffect, useState } from 'react';
+
+type Product = { id: string; name: string; priceCents: number };
+
+const BFF = import.meta.env.VITE_CATALOG_BFF ?? 'http://localhost:4001';
+
+export default function Catalog() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${BFF}/api/products`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json() as Promise<Product[]>;
+      })
+      .then(setProducts)
+      .catch((err) => setError(String(err)));
+  }, []);
+
+  if (error) {
+    return <p role="alert">Couldn’t load products: {error}</p>;
+  }
+
+  return (
+    <section className="catalog">
+      <h2>Products</h2>
+      <ul className="catalog__grid">
+        {products.map((product) => (
+          <li key={product.id} className="catalog__card">
+            <h3>{product.name}</h3>
+            <p className="catalog__price">
+              ${(product.priceCents / 100).toFixed(2)}
+            </p>
+            <button type="button">Add to cart</button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+```
+
+## Verify
+
+Start the BFF and hit both routes directly:
+
+```bash
+pnpm --filter catalog dev:bff
+# catalog BFF on http://localhost:4001
+```
+
+```bash
+curl -s http://localhost:4001/api/products
+# [{"id":"p1","name":"Aurora Mug","priceCents":1299,"blurb":"..."}, ...]
+
+curl -s http://localhost:4001/api/products/p1
+# {"id":"p1","name":"Aurora Mug","priceCents":1299,"blurb":"..."}
+
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4001/api/products/nope
+# 404
+```
+
+Now run the remote and the BFF together and load the catalog in the shell — the grid should render from fetched data, and the CORS headers should let the shell's origin (5000) read it:
+
+```bash
+pnpm --filter catalog dev        # remote on 5001
+pnpm --filter catalog dev:bff    # BFF on 4001
+pnpm --filter shell dev          # shell on 5000 — open the catalog page
+# The four cards now come from the BFF. Stop the BFF and reload:
+# the remote shows "Couldn’t load products" instead of crashing the shell.
+```
+
+Confirm both halves of the slice still build:
+
+```bash
+pnpm --filter catalog build
+# vite build (the remote) completes; the BFF is plain TS run by node-server.
+```
+
+Check your understanding:
+
+1. Why does each remote get its own thin BFF instead of every remote calling one shared API?
+2. When the remote is mounted in the shell, why would a relative `fetch('/api/products')` hit the wrong server — and what does the absolute-origin approach fix?
+3. Why does the BFF need `cors()` on `/api/*`, given the remote and the BFF are the same team's code?
+4. What makes the catalog a "vertical slice" now that it wasn't in the previous lesson?
+
+## Recap
+
+The catalog is a complete vertical slice: a React remote federated into the shell, backed by its own Hono BFF, fetching real data across a CORS boundary at a configurable origin — deployable end to end on its own. So far every remote has been React, mounted into a React host. Next we break that assumption: [Web Components Interop →](/mosaic/en/web-components/) makes a remote mountable by *any* framework.
