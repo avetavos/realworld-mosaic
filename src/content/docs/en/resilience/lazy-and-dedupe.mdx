@@ -1,0 +1,138 @@
+---
+title: Lazy loading & dedupe
+description: "Load remotes on demand, dedupe shared singletons, and understand the performance profile of runtime composition."
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+Two performance levers for runtime composition: **lazy-loading** each remote so it only downloads when a route or interaction actually needs it, and **shared-dependency dedupe** so React is fetched and evaluated once for the whole page instead of once per remote. Together they decide whether a federated storefront feels fast or ships three copies of React to every visitor.
+
+## Why
+
+Runtime composition has a performance shape a single SPA doesn't. A single SPA bundles everything at build time, so the bundler deduplicates shared code for free and tree-shakes across the whole app. Mosaic can't: [each remote is built and deployed on its own](/mosaic/en/federation/), so each one *could* bundle its own React, its own utilities, its own everything — and the browser would download all of it.
+
+Two mechanisms claw that back:
+
+- **Lazy loading.** `React.lazy(() => import('catalog/Catalog'))` is already a dynamic import — the catalog's `remoteEntry.js` and chunks aren't fetched until `<Catalog>` first renders. Gate that render behind a route or an interaction and the shell's first paint doesn't pay for remotes the visitor hasn't reached yet.
+- **Dedupe via `shared` singletons.** When the shell and the catalog both declare `shared: ['react', 'react-dom']` on the same `shareScope: 'default'`, Module Federation's runtime negotiates *one* React instance across them. The first to load wins; later remotes reuse it from the share scope instead of loading their own. This is why the `shared` config isn't a nicety — it's the difference between one React on the page and three.
+
+Singletons also protect *correctness*, not just size: React hooks break if a remote renders against a different React instance than the shell's. `singleton: true` guarantees one copy, so a federated React component and the host share the same hook dispatcher.
+
+## Pros & cons
+
+**Lazy per route/interaction vs. eagerly loading every remote upfront**
+
+- **Pros (lazy):** Smaller, faster first paint — the shell downloads only what the landing route needs; the cart's bundle waits until the user opens the cart. Bandwidth scales with what's used, not with how many teams exist.
+- **Cons (lazy):** A visible latency the first time each remote is reached (mitigated by prefetching on hover/idle), and more loading/fallback states to design. Waterfalls are possible if a remote lazily imports another remote.
+
+**`shared` singletons vs. letting each remote bundle its own deps**
+
+- **Pros (singleton):** One React on the page — smaller total download and, critically, correct hooks across the host/remote boundary. Version negotiation happens once at init.
+- **Cons (singleton):** Remotes are coupled to a compatible shared version; a remote that needs an incompatible major must either satisfy `requiredVersion` or accept its own copy. Mismatches surface as runtime warnings you have to read.
+
+## Set it up
+
+### 1. `apps/shell/vite.config.ts`
+
+Declare shared deps as **singletons** with an object config, not just a bare array, so dedupe is explicit and version-checked. `react` and `react-dom` load once for the whole page.
+
+```ts
+import { defineConfig } from 'vite';
+import { federation } from '@module-federation/vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [
+    react(),
+    federation({
+      name: 'shell',
+      remotes: {
+        catalog: { type: 'module', name: 'catalog', entry: 'http://localhost:5001/remoteEntry.js', entryGlobalName: 'catalog', shareScope: 'default' },
+        cart:    { type: 'module', name: 'cart',    entry: 'http://localhost:5002/remoteEntry.js', entryGlobalName: 'cart',    shareScope: 'default' },
+      },
+      filename: 'remoteEntry.js',
+      shared: {
+        react:       { singleton: true, requiredVersion: '^19.0.0' },
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
+      },
+    }),
+  ],
+  server: { origin: 'http://localhost:5000' },
+  build: { target: 'esnext' },
+});
+```
+
+Every remote that renders React must declare the **same** singletons on the **same** `shareScope`. The catalog remote's config mirrors this — `shared: { react: { singleton: true, requiredVersion: '^19.0.0' }, 'react-dom': { … } }` — so both sides agree on the negotiation. The Svelte cart shares *nothing* React: it mounts through a custom element, so it brings its own tiny Svelte runtime and never touches the React share scope.
+
+### 2. `apps/shell/src/routes.tsx`
+
+Lazy-load each remote behind a route so its chunks download only when the route is entered.
+
+```tsx
+import { lazy } from 'react';
+import { createBrowserRouter } from 'react-router-dom';
+import { MountCatalog } from './mountCatalog';
+
+// Cart is only reached from its own route — defer its bundle entirely.
+const CartRoute = lazy(() => import('./mountCart').then((m) => ({ default: m.MountCart })));
+
+export const router = createBrowserRouter([
+  { path: '/', element: <MountCatalog /> },      // landing = catalog
+  { path: '/cart', element: <CartRoute /> },     // cart bundle waits until /cart
+]);
+```
+
+### 3. `apps/shell/src/prefetch.ts`
+
+Hide the first-visit latency by warming a remote on intent — hover or idle — before the click. The dynamic `import()` is cached, so the later route navigation resolves instantly.
+
+```ts
+// Kick off the fetch without rendering. Result is cached by the module system.
+export function prefetchCart() {
+  import('cart/register').catch(() => {
+    // Ignore here — RemoteBoundary handles the real navigation failure.
+  });
+}
+
+// e.g. on the cart nav link:
+// <a href="/cart" onMouseEnter={prefetchCart} onFocus={prefetchCart}>Cart</a>
+```
+
+## Verify
+
+Build the shell and inspect the chunk graph, then watch the network tab confirm on-demand loading.
+
+```bash
+pnpm --filter shell build
+# ✓ built — note the output: the shell entry chunk does NOT contain
+#   the catalog or cart code; those are separate remoteEntry-driven chunks.
+```
+
+Run the whole composition and watch the Network panel:
+
+```bash
+pnpm --filter shell dev & pnpm --filter catalog dev & pnpm --filter cart dev
+```
+
+On `http://localhost:5000/`, in DevTools → Network, expect:
+
+- On first paint of `/`: `http://localhost:5001/remoteEntry.js` loads (catalog is the landing route) but **`http://localhost:5002/remoteEntry.js` does not** — the cart hasn't been reached.
+- `react` / `react-dom` chunks are requested **once**, not once per remote — that's the singleton dedupe working.
+- Hovering the Cart link fires the `remoteEntry.js` request for `5002` *before* you click; navigating to `/cart` then mounts with no visible wait.
+
+If you see React downloaded more than once, a remote is missing the `singleton: true` shared config or is on a different `shareScope` — the console prints a version-negotiation warning that names the culprit.
+
+Check your understanding:
+
+1. What does `shared: { react: { singleton: true } }` change about how many times React is downloaded and evaluated on a page with three remotes?
+2. Beyond bundle size, why does a *shared* React instance matter for correctness when a remote uses hooks?
+3. `React.lazy(() => import('catalog/Catalog'))` is already a dynamic import. What extra thing does routing add on top of that for performance?
+4. What is the tradeoff of prefetching a remote on link hover, and when would it hurt rather than help?
+
+## Recap
+
+You made runtime composition fast: lazy-loading so the shell's first paint pays only for the landing route, and `shared` singletons so React is fetched, evaluated, and reconciled *once* across every remote — the dedupe that keeps a three-team storefront from shipping three Reacts. You also saw the performance shape that distinguishes federation from a single SPA, and how prefetch-on-intent hides the one-time load latency.
+
+The remotes are now robust and fast. Next, we ship them independently: [Independent Deployment →](/mosaic/en/deployment/).

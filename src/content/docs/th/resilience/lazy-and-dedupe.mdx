@@ -1,0 +1,138 @@
+---
+title: Lazy loading & dedupe
+description: "โหลด remote แบบ on demand, dedupe shared singleton, และเข้าใจ performance profile ของ runtime composition"
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+คันโยก performance สองตัวสำหรับ runtime composition: **lazy-loading** แต่ละ remote ให้ดาวน์โหลดเฉพาะตอนที่ route หรือ interaction ต้องใช้จริง ๆ และ **shared-dependency dedupe** ให้ React ถูก fetch และ evaluate ครั้งเดียวสำหรับทั้งหน้า แทนที่จะครั้งเดียวต่อ remote รวมกันแล้วสองอย่างนี้ตัดสินว่า federated storefront จะรู้สึกเร็ว หรือส่ง React ไปให้ผู้เข้าชมทุกคนถึงสามชุด
+
+## Why
+
+runtime composition มีรูปทรงของ performance ที่ single SPA ไม่มี single SPA bundle ทุกอย่างตอน build ดังนั้น bundler จึง deduplicate โค้ดที่ใช้ร่วมให้ฟรีและ tree-shake ทั่วทั้ง app แต่ Mosaic ทำแบบนั้นไม่ได้: [แต่ละ remote ถูก build และ deploy ด้วยตัวเอง](/mosaic/th/federation/) ดังนั้นแต่ละตัว *อาจ* bundle React ของตัวเอง, utility ของตัวเอง, ทุกอย่างของตัวเอง — แล้ว browser ก็จะดาวน์โหลดทั้งหมดนั้น
+
+มีสองกลไกที่ดึงกลับคืนมา:
+
+- **Lazy loading.** `React.lazy(() => import('catalog/Catalog'))` เป็น dynamic import อยู่แล้ว — `remoteEntry.js` และ chunk ของ catalog จะยังไม่ถูก fetch จนกว่า `<Catalog>` จะ render ครั้งแรก gate การ render นั้นไว้หลัง route หรือ interaction แล้ว first paint ของ shell จะไม่ต้องจ่ายค่า remote ที่ผู้เข้าชมยังไปไม่ถึง
+- **Dedupe via `shared` singletons.** เมื่อทั้ง shell และ catalog ประกาศ `shared: ['react', 'react-dom']` บน `shareScope: 'default'` เดียวกัน runtime ของ Module Federation จะเจรจาให้เหลือ React instance *เดียว* ข้ามกัน ตัวที่โหลดก่อนชนะ; remote ที่มาทีหลังใช้ตัวนั้นซ้ำจาก share scope แทนที่จะโหลดของตัวเอง นี่คือเหตุผลที่ `shared` config ไม่ใช่ของแถม — มันคือความต่างระหว่าง React หนึ่งชุดบนหน้ากับสามชุด
+
+singleton ยังปกป้อง *correctness* ไม่ใช่แค่ขนาด: React hooks พังถ้า remote render กับ React instance คนละตัวกับของ shell `singleton: true` การันตีว่ามีชุดเดียว ดังนั้น federated React component กับ host จึงใช้ hook dispatcher ตัวเดียวกัน
+
+## Pros & cons
+
+**Lazy per route/interaction vs. eagerly loading every remote upfront**
+
+- **Pros (lazy):** first paint เล็กและเร็วกว่า — shell ดาวน์โหลดเฉพาะสิ่งที่ landing route ต้องการ; bundle ของ cart รอจนกว่าผู้ใช้จะเปิด cart bandwidth สเกลตามสิ่งที่ถูกใช้ ไม่ใช่ตามว่ามีกี่ทีม
+- **Cons (lazy):** มี latency ที่มองเห็นได้ครั้งแรกที่เข้าถึงแต่ละ remote (บรรเทาได้ด้วยการ prefetch ตอน hover/idle) และมี loading/fallback state ให้ออกแบบมากขึ้น waterfall เกิดได้ถ้า remote หนึ่ง lazily import อีก remote
+
+**`shared` singletons vs. letting each remote bundle its own deps**
+
+- **Pros (singleton):** React หนึ่งชุดบนหน้า — ดาวน์โหลดรวมเล็กลง และที่สำคัญคือ hooks ถูกต้องข้ามขอบเขต host/remote การเจรจา version เกิดครั้งเดียวตอน init
+- **Cons (singleton):** remote ถูกผูกกับ shared version ที่ compatible; remote ที่ต้องใช้ major ที่เข้ากันไม่ได้ต้องไม่ก็ทำให้ `requiredVersion` ผ่าน หรือยอมรับว่ามีชุดของตัวเอง ความไม่ตรงกันจะโผล่มาเป็น runtime warning ที่คุณต้องอ่าน
+
+## Set it up
+
+### 1. `apps/shell/vite.config.ts`
+
+ประกาศ shared dep เป็น **singleton** ด้วย object config ไม่ใช่แค่ array เปล่า ๆ เพื่อให้ dedupe ชัดเจนและ check version ได้ `react` และ `react-dom` โหลดครั้งเดียวสำหรับทั้งหน้า
+
+```ts
+import { defineConfig } from 'vite';
+import { federation } from '@module-federation/vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [
+    react(),
+    federation({
+      name: 'shell',
+      remotes: {
+        catalog: { type: 'module', name: 'catalog', entry: 'http://localhost:5001/remoteEntry.js', entryGlobalName: 'catalog', shareScope: 'default' },
+        cart:    { type: 'module', name: 'cart',    entry: 'http://localhost:5002/remoteEntry.js', entryGlobalName: 'cart',    shareScope: 'default' },
+      },
+      filename: 'remoteEntry.js',
+      shared: {
+        react:       { singleton: true, requiredVersion: '^19.0.0' },
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
+      },
+    }),
+  ],
+  server: { origin: 'http://localhost:5000' },
+  build: { target: 'esnext' },
+});
+```
+
+remote ทุกตัวที่ render React ต้องประกาศ singleton **ตัวเดียวกัน** บน `shareScope` **เดียวกัน** config ของ catalog remote สะท้อนแบบนี้ — `shared: { react: { singleton: true, requiredVersion: '^19.0.0' }, 'react-dom': { … } }` — เพื่อให้ทั้งสองฝั่งเห็นตรงกันเรื่องการเจรจา Svelte cart ไม่ share React *อะไรเลย*: มัน mount ผ่าน custom element ดังนั้นมันพก Svelte runtime เล็ก ๆ ของตัวเองมา และไม่แตะ React share scope เลย
+
+### 2. `apps/shell/src/routes.tsx`
+
+lazy-load แต่ละ remote ไว้หลัง route เพื่อให้ chunk ของมันดาวน์โหลดเฉพาะตอนเข้า route
+
+```tsx
+import { lazy } from 'react';
+import { createBrowserRouter } from 'react-router-dom';
+import { MountCatalog } from './mountCatalog';
+
+// Cart is only reached from its own route — defer its bundle entirely.
+const CartRoute = lazy(() => import('./mountCart').then((m) => ({ default: m.MountCart })));
+
+export const router = createBrowserRouter([
+  { path: '/', element: <MountCatalog /> },      // landing = catalog
+  { path: '/cart', element: <CartRoute /> },     // cart bundle waits until /cart
+]);
+```
+
+### 3. `apps/shell/src/prefetch.ts`
+
+ซ่อน latency ของการเข้าครั้งแรกด้วยการอุ่น remote ตาม intent — hover หรือ idle — ก่อนคลิก dynamic `import()` ถูก cache ไว้ ดังนั้นการ navigate ไป route ทีหลังจึง resolve ทันที
+
+```ts
+// Kick off the fetch without rendering. Result is cached by the module system.
+export function prefetchCart() {
+  import('cart/register').catch(() => {
+    // Ignore here — RemoteBoundary handles the real navigation failure.
+  });
+}
+
+// e.g. on the cart nav link:
+// <a href="/cart" onMouseEnter={prefetchCart} onFocus={prefetchCart}>Cart</a>
+```
+
+## Verify
+
+build shell แล้วตรวจ chunk graph จากนั้นดู network tab ยืนยันการโหลดแบบ on-demand
+
+```bash
+pnpm --filter shell build
+# ✓ built — note the output: the shell entry chunk does NOT contain
+#   the catalog or cart code; those are separate remoteEntry-driven chunks.
+```
+
+รัน composition ทั้งชุดแล้วดู Network panel:
+
+```bash
+pnpm --filter shell dev & pnpm --filter catalog dev & pnpm --filter cart dev
+```
+
+บน `http://localhost:5000/` ใน DevTools → Network คาดว่า:
+
+- ตอน first paint ของ `/`: `http://localhost:5001/remoteEntry.js` โหลด (catalog คือ landing route) แต่ **`http://localhost:5002/remoteEntry.js` ไม่โหลด** — ยังไปไม่ถึง cart
+- chunk ของ `react` / `react-dom` ถูกร้องขอ **ครั้งเดียว** ไม่ใช่ครั้งเดียวต่อ remote — นั่นคือ singleton dedupe ที่ทำงานอยู่
+- การ hover ลิงก์ Cart ยิง request `remoteEntry.js` ของ `5002` *ก่อน* ที่คุณจะคลิก; พอ navigate ไป `/cart` มัน mount โดยไม่มีการรอที่มองเห็นได้
+
+ถ้าคุณเห็น React ถูกดาวน์โหลดมากกว่าหนึ่งครั้ง แปลว่า remote ตัวหนึ่งขาด shared config `singleton: true` หรืออยู่คนละ `shareScope` — console จะพิมพ์ version-negotiation warning ที่ระบุตัวต้นเหตุ
+
+ตรวจสอบความเข้าใจ:
+
+1. `shared: { react: { singleton: true } }` เปลี่ยนอะไรเกี่ยวกับจำนวนครั้งที่ React ถูกดาวน์โหลดและ evaluate บนหน้าที่มีสาม remote?
+2. นอกจากขนาด bundle แล้ว ทำไม React instance ที่ *shared* จึงสำคัญต่อ correctness เมื่อ remote ใช้ hooks?
+3. `React.lazy(() => import('catalog/Catalog'))` เป็น dynamic import อยู่แล้ว routing เพิ่มอะไรมาบนนั้นเพื่อ performance?
+4. tradeoff ของการ prefetch remote ตอน hover ลิงก์คืออะไร และเมื่อไหร่ที่มันทำให้แย่ลงแทนที่จะช่วย?
+
+## Recap
+
+คุณทำให้ runtime composition เร็ว: lazy-loading เพื่อให้ first paint ของ shell จ่ายเฉพาะ landing route และ `shared` singleton เพื่อให้ React ถูก fetch, evaluate, และ reconcile *ครั้งเดียว* ข้าม remote ทุกตัว — คือ dedupe ที่ทำให้ storefront สามทีมไม่ต้องส่ง React สามชุด คุณยังได้เห็นรูปทรงของ performance ที่แยก federation ออกจาก single SPA และการ prefetch-on-intent ซ่อน latency ตอนโหลดครั้งเดียวได้อย่างไร
+
+ตอนนี้ remote ทนทานและเร็วแล้ว ต่อไป เรา ship มันแบบอิสระ: [Independent Deployment →](/mosaic/th/deployment/)

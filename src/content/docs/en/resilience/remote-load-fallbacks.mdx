@@ -1,0 +1,187 @@
+---
+title: Remote-load fallbacks
+description: "Error boundaries and fallback UI so one remote that fails to load can't take down the shell."
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+An error boundary and a fallback UI around every remote the shell mounts, so that when a remote's `remoteEntry.js` fails to load — the CDN is down, a deploy went bad, the network flaked — that one slice shows a small "couldn't load" panel and the rest of the storefront keeps working.
+
+This is the first lesson of the module because it names the price of runtime composition. In a single-page app, the whole bundle either loads or it doesn't. In Mosaic, [each remote loads at runtime from its own URL](/mosaic/en/federation/), which means each remote can fail *independently* — and if the shell doesn't handle that, one broken remote takes the whole page down with it.
+
+## Why
+
+`React.lazy(() => import('catalog/Catalog'))` returns a promise. When the import resolves, `<Suspense>` swaps the fallback for the real component. But `<Suspense>` only handles the *pending* state — it has no answer for the *rejected* state. If `remoteEntry.js` 404s or the network drops, that promise rejects, the rejection propagates up as a render error, and without a boundary it unmounts everything above it. The shell — nav, session, cart badge, the other remotes — goes blank.
+
+An **error boundary** catches that rejection at a chosen point in the tree and renders a fallback instead of letting it bubble. Put a boundary immediately around each remote and the blast radius of a failed load is exactly one slice. This is the same isolation principle a service mesh gives microservices: a dependency being down degrades one feature, it doesn't cascade.
+
+## Pros & cons
+
+**One boundary per remote vs. one boundary around the whole app**
+
+- **Pros (per remote):** A failed load degrades exactly one slice; the nav, session, and other remotes stay interactive. The fallback can be specific ("Catalog is unavailable") and can offer a retry that re-imports only that remote.
+- **Cons (per remote):** More boundaries to write and place, and you have to design a sensible degraded state for each slice rather than a single generic error page.
+
+**Error boundary vs. a `try/catch` around the import**
+
+- **Pros (boundary):** Catches both load-time rejections *and* render-time errors thrown inside the remote after it mounts, in one mechanism. It's the idiomatic React seam for "this subtree failed."
+- **Cons (boundary):** Must be a class component (or a wrapper like `react-error-boundary`) — there's still no hook form — and it only catches errors during render/lifecycle, not inside event handlers, so remote click handlers still need their own guarding.
+
+## Set it up
+
+### 1. `apps/shell/src/RemoteBoundary.tsx`
+
+A small error boundary with a retry. It resets on demand so a transient failure can be re-attempted without a full page reload.
+
+```tsx
+import { Component, type ReactNode } from 'react';
+
+type Props = {
+  /** Shown in the fallback, e.g. "Catalog". */
+  name: string;
+  children: ReactNode;
+};
+
+type State = { error: Error | null };
+
+export class RemoteBoundary extends Component<Props, State> {
+  state: State = { error: null };
+
+  static getDerivedStateFromError(error: Error): State {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    // In production, forward this to your telemetry so a failing
+    // remote is visible even though the shell survived.
+    console.error(`[shell] remote "${this.props.name}" failed`, error);
+  }
+
+  reset = () => this.setState({ error: null });
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="remote-fallback" role="alert">
+          <p>{this.props.name} is unavailable right now.</p>
+          <button onClick={this.reset}>Try again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+```
+
+### 2. `apps/shell/src/mountCatalog.tsx`
+
+Wrap the [federated catalog remote](/mosaic/en/catalog/) in the boundary *and* a `<Suspense>`. The boundary owns the failure state; Suspense owns the loading state.
+
+```tsx
+import { lazy, Suspense } from 'react';
+import { RemoteBoundary } from './RemoteBoundary';
+
+// If remoteEntry.js can't be fetched, this import() rejects.
+const Catalog = lazy(() => import('catalog/Catalog'));
+
+export function MountCatalog() {
+  return (
+    <RemoteBoundary name="Catalog">
+      <Suspense fallback={<div className="remote-loading">Loading catalog…</div>}>
+        <Catalog />
+      </Suspense>
+    </RemoteBoundary>
+  );
+}
+```
+
+The ordering matters: `RemoteBoundary` must be *outside* `Suspense`. A rejected lazy import throws during render, and only a boundary above the throwing component can catch it.
+
+### 3. `apps/shell/src/mountCart.tsx`
+
+The [Svelte cart remote mounts through a custom element](/mosaic/en/cart/), so its failure mode is different: `import('cart/register')` can reject before `<cart-app>` is ever defined. Guard the *registration*, not a React component.
+
+```tsx
+import { Component, type ReactNode } from 'react';
+import { RemoteBoundary } from './RemoteBoundary';
+
+// Imperatively load + register the custom element, surfacing failure to React.
+class CartLoader extends Component<{ children: ReactNode }, { ready: boolean; error: Error | null }> {
+  state = { ready: false, error: null as Error | null };
+
+  async componentDidMount() {
+    try {
+      await import('cart/register'); // defines <cart-app>
+      this.setState({ ready: true });
+    } catch (error) {
+      // Re-throw on the next render so RemoteBoundary catches it.
+      this.setState(() => {
+        throw error as Error;
+      });
+    }
+  }
+
+  render() {
+    return this.state.ready ? this.props.children : <div className="remote-loading">Loading cart…</div>;
+  }
+}
+
+export function MountCart() {
+  return (
+    <RemoteBoundary name="Cart">
+      <CartLoader>
+        {/* Custom element — the React types accept it as an intrinsic tag. */}
+        <cart-app></cart-app>
+      </CartLoader>
+    </RemoteBoundary>
+  );
+}
+```
+
+Because a dynamic `import()` rejection lands in a promise, not in React's render, we re-throw it from a state updater so the boundary can see it. That's the one seam where load-time failures need a nudge to reach the boundary.
+
+## Verify
+
+Run the shell against remotes, then take one remote offline and confirm the shell survives.
+
+```bash
+# Terminal 1 — shell only (do NOT start the catalog remote)
+pnpm --filter shell dev
+# ➜  Local:   http://localhost:5000/
+```
+
+Open `http://localhost:5000/`. Because nothing is serving `http://localhost:5001/remoteEntry.js`, expect:
+
+- The Catalog area shows **"Catalog is unavailable right now."** with a *Try again* button.
+- The top-nav, session, and cart badge are **still rendered and interactive** — the page did not go blank.
+- The console shows a single `[shell] remote "Catalog" failed` line, not an unhandled React tree crash.
+
+Now start the remote and retry, without reloading the shell:
+
+```bash
+# Terminal 2
+pnpm --filter catalog dev
+# ➜  Local:   http://localhost:5001/
+```
+
+Click **Try again** in the Catalog panel. The boundary resets, the lazy import re-runs, and the catalog grid mounts. Finish with a production build to confirm the boundary compiles cleanly:
+
+```bash
+pnpm --filter shell build
+# ✓ built in … — no type errors from RemoteBoundary / MountCart
+```
+
+Check your understanding:
+
+1. `<Suspense>` already shows a fallback while a remote loads. Why doesn't that cover a `remoteEntry.js` that 404s?
+2. Why must `RemoteBoundary` sit *outside* `<Suspense>` rather than inside it?
+3. The Svelte cart loads via `import('cart/register')`, not `React.lazy`. Why does its failure need to be re-thrown from a state updater to reach the boundary?
+4. What is the "blast radius" difference between one boundary per remote and a single boundary around the whole shell?
+
+## Recap
+
+You wrapped each remote in an error boundary so a failed `remoteEntry.js` degrades exactly one slice instead of blanking the shell — the isolation that makes runtime composition safe. You handled both the React-component remote (catalog) and the custom-element remote (cart), including the load-time rejection seam that needs an explicit re-throw.
+
+Next, we make composition *fast* as well as safe: [Lazy loading & dedupe →](/mosaic/en/resilience/lazy-and-dedupe/).
