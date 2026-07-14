@@ -1,0 +1,56 @@
+---
+title: Next Steps
+description: "Concrete ways to take Mosaic past the teaching build — SSR streaming, runtime plugins, a real design-system pipeline, contract testing, observability, CI per slice, and import maps."
+sidebar:
+  order: 2
+---
+
+Mosaic proved the shape: a runtime-composed, multi-framework storefront where each slice deploys on its own. What it deliberately left out is everything that turns a proven shape into a production system. Each extension below names **what it teaches** and **where it plugs into what you already built**, so none of it is a rewrite — it's a next commit.
+
+## SSR and streaming micro-frontends
+
+**What it teaches:** how to render remotes on the server and stream their HTML into the first response, so the user sees content before any `remoteEntry.js` loads — the biggest gap in a client-composed shell.
+
+**Where it plugs in:** the shell currently mounts remotes on the client after load ([the path of a runtime remote](/mosaic/en/wrap-up/recap/) shows the round trip). Introduce a server that composes remote HTML fragments — the [content remote](/mosaic/en/content/) already lives partly on the server via Astro, so start there and generalize the pattern to the catalog and cart shells.
+
+## Module Federation runtime plugins
+
+**What it teaches:** the `@module-federation/runtime` plugin API — hooks that intercept remote loading to add retries, swap `remoteEntry` URLs per environment, inject auth headers, or fall back to a cached version when a remote is down.
+
+**Where it plugs in:** you already point the shell's `remotes` at env-driven URLs in [Independent Deployment →](/mosaic/en/deployment/deploy-each-slice/). A runtime plugin is the clean home for that logic and for the [resilience fallbacks](/mosaic/en/resilience/remote-load-fallbacks/) you wrote as error boundaries — move the load-time concerns down into the loader itself.
+
+## A real design-system build and release pipeline
+
+**What it teaches:** versioning and publishing the design system as its own package — semver, a changelog, and a release that consumers upgrade to deliberately, instead of everyone importing `HEAD` from the workspace.
+
+**Where it plugs in:** `@mosaic/design-system` is a workspace package today ([Tokens & Primitives →](/mosaic/en/design-system/tokens-and-primitives/)). Publish it to a registry, pin each remote to a version, and now a token change is a release the catalog and cart teams adopt on their own schedule — the same independence you gave the remotes, applied to the shared layer.
+
+## Contract testing between shell and remotes
+
+**What it teaches:** how to catch a broken seam *before* deploy — that a remote still exposes `./Catalog`, that `<cart-app>` still accepts the attributes the shell passes, that a bus event still carries the fields consumers read.
+
+**Where it plugs in:** the mount/interop points from [Module Federation Core →](/mosaic/en/federation/) and the events from [Cross-MFE Communication →](/mosaic/en/communication/the-event-bus/) are your contracts. Write tests the remote runs in CI that assert its exposed surface, and tests the shell runs against a remote's published contract — so `bus.emit('cart:add', …)` renaming a field fails a pipeline instead of a user's cart.
+
+## Per-slice observability
+
+**What it teaches:** tracing a single user action across independently-deployed slices — which remote version rendered, which BFF answered, where a "add to cart" that never arrived actually broke.
+
+**Where it plugs in:** every slice has a natural instrumentation point — the [Hono BFFs](/mosaic/en/catalog/catalog-bff/) for backend spans, the [event bus](/mosaic/en/communication/the-event-bus/) for cross-MFE traces, and the [resilience layer](/mosaic/en/resilience/) for remote-load metrics. Stamp a correlation id at the shell and thread it through the bus and every BFF call.
+
+## CI/CD per slice
+
+**What it teaches:** a pipeline where changing one slice builds, tests, and deploys **only** that slice — the operational proof of the independence the architecture promises.
+
+**Where it plugs in:** [Independent Deployment →](/mosaic/en/deployment/) established that a slice ships on its own. Wire it up for real: path-filtered CI in the monorepo so a change under `apps/cart/` deploys the cart's UI and BFF and nothing else, publishing a new `remoteEntry.js` the shell loads on the next visit.
+
+## Import maps as an alternative to Module Federation
+
+**What it teaches:** that runtime composition isn't only Module Federation — native browser **import maps** can resolve bare specifiers to versioned remote URLs, giving you runtime swapping with far less tooling (and different trade-offs: no built-in sharing negotiation or dependency dedupe).
+
+**Where it plugs in:** it's a considered alternative to everything in [Module Federation Core →](/mosaic/en/federation/). Try composing one remote via an import map instead of the MF host config and feel the difference — what you gain in simplicity, what you give up in shared-singleton management. Knowing both is what lets you *choose* Module Federation rather than default to it.
+
+---
+
+That's Mosaic. You built a storefront that several teams could own independently, in three frameworks, composed at runtime — and you can defend every seam in it.
+
+Revisit the whole shape any time in the [Architecture overview →](/mosaic/en/introduction/architecture/), and take the code further at the source: [github.com/avetavos/realworld-mosaic](https://github.com/avetavos/realworld-mosaic).
