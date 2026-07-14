@@ -1,0 +1,186 @@
+---
+title: Deploy each slice
+description: "Build and deploy one slice independently — the remote's static remoteEntry.js plus its BFF — and point the shell at deployed URLs via env."
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+The independent deployment of a single slice, end to end: build the [catalog remote](/mosaic/en/catalog/) to static assets — its `remoteEntry.js` and chunks — and host them at a stable URL; deploy its thin Hono BFF as a small service; and point the shell's `remotes` config at those deployed URLs through environment variables. Do this once for one slice and every other slice deploys the same way.
+
+We'll use one concrete host to keep it real: **Cloudflare Pages** for the remote's static assets and a **Cloudflare Worker** for the BFF. The pattern is host-agnostic — any static host plus any small server works — but a single concrete example is worth more than a menu of options.
+
+## Why
+
+The whole point of Module Federation is that the shell [loads remotes at runtime from their `remoteEntry` URLs](/mosaic/en/federation/), not from a build-time import. That property only pays off if each remote is *actually* a separate deployable. A remote is two artifacts:
+
+1. **Static assets** — `remoteEntry.js` plus the JS/CSS chunks it references. These are plain files. Any CDN or static host can serve them; there's no server-side rendering to run. The shell fetches `remoteEntry.js` at runtime, and it in turn pulls the chunks.
+2. **The BFF** — the remote's thin Hono backend. It's a small always-on service (or a serverless function) that owns the slice's data. The remote's UI calls its *own* BFF; the shell never proxies it.
+
+The shell must not hardcode `http://localhost:5001`. In production the catalog lives at a real domain, and — the key move — that URL is **configuration, not code**. Inject it via env at the shell's build (or read it at runtime), so promoting a remote from staging to production is a config change, not a shell code change.
+
+## Pros & cons
+
+**Static host + small BFF service vs. one server rendering the whole slice**
+
+- **Pros (split):** The `remoteEntry` assets get CDN caching, cheap global distribution, and near-zero ops — they're just files. The BFF stays tiny and independently scalable. Each half fails and scales on its own.
+- **Cons (split):** Two deploy targets per slice and CORS to configure (the remote's UI, served from one origin, calls its BFF on another). More moving URLs to keep straight.
+
+**Shell reads remote URLs from env vs. hardcoding them in the config**
+
+- **Pros (env):** One shell build promotes across environments; a remote can move hosts without touching shell code. Staging and production differ only by env values.
+- **Cons (env):** The URLs must be present at build time (or fetched at runtime), and a typo in an env var surfaces as a remote that won't load — caught by the [fallback boundary](/mosaic/en/resilience/remote-load-fallbacks/) but still a config bug to chase.
+
+## Set it up
+
+### 1. `apps/catalog/vite.config.ts`
+
+Build the remote for production. The federation config is unchanged from dev — only the *build* matters here. Set `base` to the stable URL the assets will live at so the chunk references resolve against the deployed origin.
+
+```ts
+import { defineConfig } from 'vite';
+import { federation } from '@module-federation/vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  // Where the built assets are served from in production.
+  base: process.env.CATALOG_PUBLIC_URL ?? '/',
+  plugins: [
+    react(),
+    federation({
+      name: 'catalog',
+      filename: 'remoteEntry.js',
+      exposes: { './Catalog': './src/Catalog.tsx' },
+      shared: {
+        react:       { singleton: true, requiredVersion: '^19.0.0' },
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
+      },
+    }),
+  ],
+  build: { target: 'esnext' },
+});
+```
+
+```bash
+# Build the static slice → apps/catalog/dist (remoteEntry.js + chunks)
+CATALOG_PUBLIC_URL=https://catalog.mosaic.example/ pnpm --filter catalog build
+
+# Deploy those files to Cloudflare Pages
+pnpm dlx wrangler pages deploy apps/catalog/dist --project-name mosaic-catalog
+# ✔ Deployment complete: https://catalog.mosaic.example/remoteEntry.js
+```
+
+### 2. `apps/catalog/bff/worker.ts`
+
+The catalog BFF as a Cloudflare Worker. Same Hono app as in the [catalog module](/mosaic/en/catalog/) — Hono runs on Workers unchanged; you only swap the `@hono/node-server` entry for the Worker's `fetch` export. CORS is enabled so the remote's UI (a different origin) can call it.
+
+```ts
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+
+const app = new Hono();
+
+app.use('/api/*', cors({ origin: 'https://catalog.mosaic.example' }));
+
+app.get('/api/products', (c) => c.json([
+  { id: 'p1', name: 'Mosaic Tee', priceCents: 2500 },
+  { id: 'p2', name: 'Federation Mug', priceCents: 1299 },
+]));
+
+app.get('/api/products/:id', (c) => {
+  const found = c.req.param('id') === 'p1';
+  return found ? c.json({ id: 'p1', name: 'Mosaic Tee', priceCents: 2500 }) : c.notFound();
+});
+
+// Cloudflare Workers entry — no @hono/node-server needed.
+export default app;
+```
+
+```bash
+# Deploy the BFF (wrangler.jsonc sets the route, e.g. api.catalog.mosaic.example/*)
+pnpm dlx wrangler deploy apps/catalog/bff/worker.ts
+# ✔ https://api.catalog.mosaic.example
+```
+
+### 3. `apps/shell/vite.config.ts`
+
+The shell reads each remote's `remoteEntry` URL from env, so the same shell build targets staging or production by changing values only.
+
+```ts
+import { defineConfig, loadEnv } from 'vite';
+import { federation } from '@module-federation/vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'MOSAIC_');
+  return {
+    plugins: [
+      react(),
+      federation({
+        name: 'shell',
+        remotes: {
+          catalog: {
+            type: 'module', name: 'catalog', entryGlobalName: 'catalog', shareScope: 'default',
+            entry: env.MOSAIC_CATALOG_ENTRY, // e.g. https://catalog.mosaic.example/remoteEntry.js
+          },
+          cart: {
+            type: 'module', name: 'cart', entryGlobalName: 'cart', shareScope: 'default',
+            entry: env.MOSAIC_CART_ENTRY,
+          },
+        },
+        filename: 'remoteEntry.js',
+        shared: {
+          react:       { singleton: true, requiredVersion: '^19.0.0' },
+          'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
+        },
+      }),
+    ],
+    build: { target: 'esnext' },
+  };
+});
+```
+
+```bash
+# apps/shell/.env.production
+MOSAIC_CATALOG_ENTRY=https://catalog.mosaic.example/remoteEntry.js
+MOSAIC_CART_ENTRY=https://cart.mosaic.example/remoteEntry.js
+```
+
+## Verify
+
+Confirm the deployed slice is reachable and self-contained, then confirm the shell composes it from the real URL.
+
+```bash
+# The static remoteEntry is live and CDN-served
+curl -sI https://catalog.mosaic.example/remoteEntry.js | grep -i 'HTTP\|content-type'
+# HTTP/2 200
+# content-type: text/javascript
+
+# The BFF is live and returns its data
+curl -s https://api.catalog.mosaic.example/api/products
+# [{"id":"p1","name":"Mosaic Tee","priceCents":2500}, …]
+```
+
+Build and preview the shell against the deployed URLs:
+
+```bash
+pnpm --filter shell build --mode production
+pnpm --filter shell preview
+# ➜  http://localhost:4173/
+```
+
+Open the preview and check Network: the shell fetches `https://catalog.mosaic.example/remoteEntry.js` (the deployed URL, **not** `localhost:5001`), the catalog mounts, and its product calls hit `https://api.catalog.mosaic.example`. Crucially, you deployed the catalog **without building or redeploying the shell or the cart** — that independence is the whole point, and the next lesson proves it under version changes.
+
+Check your understanding:
+
+1. A federated remote is two deployables. What are they, and why can the `remoteEntry` assets go on a plain CDN while the BFF needs a service?
+2. Why does the shell read each remote's entry URL from an env var instead of hardcoding it in `vite.config.ts`?
+3. The remote's UI and its BFF are served from different origins. What must the BFF configure as a result, and why?
+4. You deployed the catalog. What did you *not* have to rebuild — and which architectural choice makes that safe?
+
+## Recap
+
+You deployed one slice end to end: the catalog's static `remoteEntry.js` and chunks to Cloudflare Pages, its Hono BFF to a Worker, and wired the shell to the deployed URLs through env — no shell or sibling-remote rebuild required. That's independent deployment made concrete on one host, and the template every slice reuses.
+
+Next, we turn "deployed once" into "shipped continuously": [Versioning remotes →](/mosaic/en/deployment/versioning-remotes/).

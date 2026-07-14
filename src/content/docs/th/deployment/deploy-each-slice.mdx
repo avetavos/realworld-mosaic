@@ -1,0 +1,186 @@
+---
+title: Deploy each slice
+description: "build และ deploy หนึ่ง slice แบบอิสระ — static remoteEntry.js ของ remote บวก BFF ของมัน — แล้วชี้ shell ไปที่ URL ที่ deploy แล้วผ่าน env"
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+การ deploy slice เดียวแบบอิสระตั้งแต่ต้นจนจบ: build [catalog remote](/mosaic/th/catalog/) เป็น static asset — `remoteEntry.js` และ chunk ของมัน — แล้ว host ไว้ที่ URL คงที่; deploy Hono BFF ผอม ๆ ของมันเป็น service เล็ก ๆ; และชี้ `remotes` config ของ shell ไปที่ URL ที่ deploy แล้วผ่าน environment variable ทำสิ่งนี้ครั้งเดียวสำหรับ slice หนึ่ง แล้ว slice อื่น ๆ ทุกตัวก็ deploy แบบเดียวกัน
+
+เราจะใช้ host จริงตัวหนึ่งเพื่อให้เห็นภาพ: **Cloudflare Pages** สำหรับ static asset ของ remote และ **Cloudflare Worker** สำหรับ BFF pattern นี้ไม่ผูกกับ host — static host ตัวไหนบวก server เล็ก ๆ ตัวไหนก็ได้ — แต่ตัวอย่างจริงตัวเดียวมีค่ามากกว่าเมนูตัวเลือกยาวเหยียด
+
+## Why
+
+จุดประสงค์ทั้งหมดของ Module Federation คือ shell [โหลด remote ตอน runtime จาก URL ของ `remoteEntry`](/mosaic/th/federation/) ไม่ใช่จาก build-time import คุณสมบัตินี้จะคุ้มก็ต่อเมื่อแต่ละ remote เป็น deployable แยก *จริง ๆ* remote หนึ่งตัวคือ artifact สองชิ้น:
+
+1. **Static assets** — `remoteEntry.js` บวก JS/CSS chunk ที่มันอ้างถึง สิ่งเหล่านี้เป็นไฟล์ธรรมดา CDN หรือ static host ตัวไหนก็ serve ได้; ไม่มี server-side rendering ให้รัน shell fetch `remoteEntry.js` ตอน runtime แล้วมันก็ดึง chunk ต่อ
+2. **The BFF** — Hono backend ผอม ๆ ของ remote มันคือ service เล็ก ๆ ที่ always-on (หรือ serverless function) ที่เป็นเจ้าของข้อมูลของ slice UI ของ remote เรียก BFF *ของตัวเอง*; shell ไม่เคย proxy ให้
+
+shell ต้องไม่ hardcode `http://localhost:5001` ใน production catalog อยู่ที่ domain จริง และ — จุดสำคัญ — URL นั้นคือ **configuration ไม่ใช่ code** inject มันผ่าน env ตอน shell build (หรืออ่านตอน runtime) เพื่อว่าการเลื่อน remote จาก staging ไป production เป็นการเปลี่ยน config ไม่ใช่การเปลี่ยน code ของ shell
+
+## Pros & cons
+
+**Static host + small BFF service vs. one server rendering the whole slice**
+
+- **Pros (split):** asset ของ `remoteEntry` ได้ CDN caching, การกระจายทั่วโลกราคาถูก, และ ops แทบเป็นศูนย์ — มันแค่ไฟล์ BFF ยังคงเล็กและสเกลแยกได้ แต่ละครึ่งล้มและสเกลด้วยตัวเอง
+- **Cons (split):** สอง deploy target ต่อ slice และต้อง config CORS (UI ของ remote serve จาก origin หนึ่ง เรียก BFF บนอีก origin) มี URL ต้องคุมให้ตรงมากขึ้น
+
+**Shell reads remote URLs from env vs. hardcoding them in the config**
+
+- **Pros (env):** shell build เดียวเลื่อนข้ามหลาย environment ได้; remote ย้าย host ได้โดยไม่แตะ code ของ shell staging กับ production ต่างกันแค่ค่า env
+- **Cons (env):** URL ต้องมีอยู่ตอน build (หรือ fetch ตอน runtime) และการพิมพ์ env var ผิดจะโผล่มาเป็น remote ที่โหลดไม่ได้ — ถูกดักด้วย [fallback boundary](/mosaic/th/resilience/remote-load-fallbacks/) แต่ก็ยังเป็น config bug ให้ตามหา
+
+## Set it up
+
+### 1. `apps/catalog/vite.config.ts`
+
+build remote สำหรับ production federation config ไม่เปลี่ยนจากตอน dev — มีแค่ *build* ที่สำคัญตรงนี้ ตั้ง `base` เป็น URL คงที่ที่ asset จะอยู่ เพื่อให้การอ้าง chunk resolve เทียบกับ origin ที่ deploy แล้ว
+
+```ts
+import { defineConfig } from 'vite';
+import { federation } from '@module-federation/vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  // Where the built assets are served from in production.
+  base: process.env.CATALOG_PUBLIC_URL ?? '/',
+  plugins: [
+    react(),
+    federation({
+      name: 'catalog',
+      filename: 'remoteEntry.js',
+      exposes: { './Catalog': './src/Catalog.tsx' },
+      shared: {
+        react:       { singleton: true, requiredVersion: '^19.0.0' },
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
+      },
+    }),
+  ],
+  build: { target: 'esnext' },
+});
+```
+
+```bash
+# Build the static slice → apps/catalog/dist (remoteEntry.js + chunks)
+CATALOG_PUBLIC_URL=https://catalog.mosaic.example/ pnpm --filter catalog build
+
+# Deploy those files to Cloudflare Pages
+pnpm dlx wrangler pages deploy apps/catalog/dist --project-name mosaic-catalog
+# ✔ Deployment complete: https://catalog.mosaic.example/remoteEntry.js
+```
+
+### 2. `apps/catalog/bff/worker.ts`
+
+catalog BFF เป็น Cloudflare Worker Hono app ตัวเดียวกับใน [catalog module](/mosaic/th/catalog/) — Hono รันบน Workers ได้โดยไม่ต้องแก้; คุณแค่สลับ `@hono/node-server` entry เป็น `fetch` export ของ Worker เปิด CORS ไว้เพื่อให้ UI ของ remote (คนละ origin) เรียกมันได้
+
+```ts
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+
+const app = new Hono();
+
+app.use('/api/*', cors({ origin: 'https://catalog.mosaic.example' }));
+
+app.get('/api/products', (c) => c.json([
+  { id: 'p1', name: 'Mosaic Tee', priceCents: 2500 },
+  { id: 'p2', name: 'Federation Mug', priceCents: 1299 },
+]));
+
+app.get('/api/products/:id', (c) => {
+  const found = c.req.param('id') === 'p1';
+  return found ? c.json({ id: 'p1', name: 'Mosaic Tee', priceCents: 2500 }) : c.notFound();
+});
+
+// Cloudflare Workers entry — no @hono/node-server needed.
+export default app;
+```
+
+```bash
+# Deploy the BFF (wrangler.jsonc sets the route, e.g. api.catalog.mosaic.example/*)
+pnpm dlx wrangler deploy apps/catalog/bff/worker.ts
+# ✔ https://api.catalog.mosaic.example
+```
+
+### 3. `apps/shell/vite.config.ts`
+
+shell อ่าน URL ของ `remoteEntry` ของแต่ละ remote จาก env เพื่อให้ shell build เดียวกันเล็งไป staging หรือ production ได้ด้วยการเปลี่ยนแค่ค่า
+
+```ts
+import { defineConfig, loadEnv } from 'vite';
+import { federation } from '@module-federation/vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'MOSAIC_');
+  return {
+    plugins: [
+      react(),
+      federation({
+        name: 'shell',
+        remotes: {
+          catalog: {
+            type: 'module', name: 'catalog', entryGlobalName: 'catalog', shareScope: 'default',
+            entry: env.MOSAIC_CATALOG_ENTRY, // e.g. https://catalog.mosaic.example/remoteEntry.js
+          },
+          cart: {
+            type: 'module', name: 'cart', entryGlobalName: 'cart', shareScope: 'default',
+            entry: env.MOSAIC_CART_ENTRY,
+          },
+        },
+        filename: 'remoteEntry.js',
+        shared: {
+          react:       { singleton: true, requiredVersion: '^19.0.0' },
+          'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
+        },
+      }),
+    ],
+    build: { target: 'esnext' },
+  };
+});
+```
+
+```bash
+# apps/shell/.env.production
+MOSAIC_CATALOG_ENTRY=https://catalog.mosaic.example/remoteEntry.js
+MOSAIC_CART_ENTRY=https://cart.mosaic.example/remoteEntry.js
+```
+
+## Verify
+
+ยืนยันว่า slice ที่ deploy แล้วเข้าถึงได้และ self-contained จากนั้นยืนยันว่า shell compose มันจาก URL จริง
+
+```bash
+# The static remoteEntry is live and CDN-served
+curl -sI https://catalog.mosaic.example/remoteEntry.js | grep -i 'HTTP\|content-type'
+# HTTP/2 200
+# content-type: text/javascript
+
+# The BFF is live and returns its data
+curl -s https://api.catalog.mosaic.example/api/products
+# [{"id":"p1","name":"Mosaic Tee","priceCents":2500}, …]
+```
+
+build แล้ว preview shell เทียบกับ URL ที่ deploy แล้ว:
+
+```bash
+pnpm --filter shell build --mode production
+pnpm --filter shell preview
+# ➜  http://localhost:4173/
+```
+
+เปิด preview แล้วเช็ค Network: shell fetch `https://catalog.mosaic.example/remoteEntry.js` (URL ที่ deploy แล้ว **ไม่ใช่** `localhost:5001`), catalog mount, และการเรียก product ของมันไปที่ `https://api.catalog.mosaic.example` ที่สำคัญ คุณ deploy catalog **โดยไม่ต้อง build หรือ redeploy shell หรือ cart** — ความอิสระนั้นคือประเด็นทั้งหมด และบทถัดไปพิสูจน์มันภายใต้การเปลี่ยน version
+
+ตรวจสอบความเข้าใจ:
+
+1. federated remote คือ deployable สองชิ้น มันคืออะไรบ้าง และทำไม asset ของ `remoteEntry` ถึงวางบน CDN ธรรมดาได้ ขณะที่ BFF ต้องมี service?
+2. ทำไม shell ถึงอ่าน URL entry ของแต่ละ remote จาก env var แทนที่จะ hardcode มันใน `vite.config.ts`?
+3. UI ของ remote กับ BFF ของมัน serve จากคนละ origin ผลที่ตามมาคือ BFF ต้อง config อะไร และเพราะอะไร?
+4. คุณ deploy catalog แล้ว มีอะไรที่คุณ *ไม่ต้อง* rebuild — และการเลือกสถาปัตยกรรมข้อไหนที่ทำให้มันปลอดภัย?
+
+## Recap
+
+คุณ deploy หนึ่ง slice ตั้งแต่ต้นจนจบ: `remoteEntry.js` และ chunk แบบ static ของ catalog ไป Cloudflare Pages, Hono BFF ของมันไป Worker, และต่อสาย shell เข้ากับ URL ที่ deploy แล้วผ่าน env — ไม่ต้อง rebuild shell หรือ remote พี่น้อง นั่นคือ independent deployment ที่ทำให้เป็นรูปธรรมบน host เดียว และเป็นเทมเพลตที่ทุก slice ใช้ซ้ำ
+
+ต่อไป เราเปลี่ยน "deploy ครั้งเดียว" ให้เป็น "ship ต่อเนื่อง": [Versioning remotes →](/mosaic/th/deployment/versioning-remotes/)

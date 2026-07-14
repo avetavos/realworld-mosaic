@@ -1,0 +1,149 @@
+---
+title: Versioning remotes
+description: "Roll out one remote — a new remoteEntry the shell picks up on next load — without rebuilding the shell or the other remotes."
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+The payoff the whole architecture has been building toward: shipping a new version of *one* remote, live, without rebuilding or redeploying the shell or any other remote. We'll version the catalog's `remoteEntry`, roll it out, and watch the shell pick it up on the next visitor's page load — the "ship one team" promise, proven end to end.
+
+## Why
+
+Because the shell [loads remotes at runtime from their `remoteEntry` URLs](/mosaic/en/federation/), a remote's version lives entirely on the remote's side. When the [catalog team deploys](/mosaic/en/deployment/deploy-each-slice/) a new build, they publish a new `remoteEntry.js` at the stable URL the shell already knows. The shell doesn't import the catalog at build time, so it has nothing to rebuild — the *next* time a browser loads the shell, it fetches the current `remoteEntry.js` and gets the new catalog. That's the release train broken apart: the catalog team ships on its own schedule, the cart team never notices, the shell stays untouched.
+
+The details that make this safe:
+
+- **Cache-busting the entry.** `remoteEntry.js` is the manifest the shell reads to find the current chunks; it must be served with a short/no-cache header so a new deploy is seen promptly, while the *content* chunks it points at are immutable and hashed for long cache lifetimes. Get this backwards and visitors keep loading the old catalog from cache.
+- **Shared-version compatibility.** The new catalog still declares `react` as a `singleton` with a `requiredVersion`. Module Federation negotiates versions at load: if the new catalog needs a React the shell can't satisfy, the runtime warns rather than silently rendering against two Reacts. Versioning a remote's *own* code is free; changing a *shared* major is the coordinated case.
+- **A manifest for provenance.** Turning on `manifest: true` emits `mf-manifest.json` alongside `remoteEntry.js`, and the `additionalData` hook can stamp a build id or git SHA into it — so you can tell *which* catalog version is live without guessing.
+
+## Pros & cons
+
+**Runtime rollout (new remoteEntry) vs. rebuilding the shell to adopt a remote change**
+
+- **Pros (runtime):** One team ships without coordinating a shell release; rollout is a single static deploy; rollback is re-pointing to the previous build's assets. No fan-out rebuild across teams.
+- **Cons (runtime):** No build-time type checking across the shell↔remote seam — a breaking change to an exposed component's props isn't caught by a compiler, only at runtime. You need a contract (versioned exposes, or contract tests) to replace what the monolith's single build gave you for free.
+
+**Immutable hashed chunks + short-cached entry vs. caching everything the same**
+
+- **Pros (split caching):** New deploys are picked up fast (fresh entry) while chunks stay cheaply cached forever (content-hashed). Best of both.
+- **Cons (split caching):** Two cache policies to configure correctly per host; a misconfigured `remoteEntry.js` cache is the classic "why is the old version still live" bug.
+
+## Set it up
+
+### 1. `apps/catalog/vite.config.ts`
+
+Emit a manifest and stamp the build so every deployed remote is identifiable. This is added to the same federation config from the previous lesson.
+
+```ts
+federation({
+  name: 'catalog',
+  filename: 'remoteEntry.js',
+  exposes: { './Catalog': './src/Catalog.tsx' },
+  shared: {
+    react:       { singleton: true, requiredVersion: '^19.0.0' },
+    'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
+  },
+  // Emit mf-manifest.json + mf-stats.json and stamp the build id into it.
+  manifest: {
+    additionalData: ({ stats }) => {
+      stats.metaData.buildId = process.env.GIT_SHA ?? 'dev';
+      stats.metaData.deployedAt = new Date().toISOString();
+    },
+  },
+}),
+```
+
+### 2. Cache headers — `apps/catalog/public/_headers`
+
+On Cloudflare Pages, a `_headers` file sets the split cache policy: the entry is always revalidated, the hashed assets are immutable.
+
+```
+# The manifest the shell reads every load — never cache stale.
+/remoteEntry.js
+  Cache-Control: no-cache
+/mf-manifest.json
+  Cache-Control: no-cache
+
+# Content-hashed chunks — safe to cache forever.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+```
+
+### 3. Ship a new catalog version
+
+Change only the catalog, build with a fresh build id, deploy its assets. Nothing about the shell or the cart is touched.
+
+```bash
+# Make a catalog-only change (e.g. tweak the product grid), then:
+GIT_SHA=$(git rev-parse --short HEAD) \
+CATALOG_PUBLIC_URL=https://catalog.mosaic.example/ \
+  pnpm --filter catalog build
+
+# Deploy ONLY the catalog's static assets
+pnpm dlx wrangler pages deploy apps/catalog/dist --project-name mosaic-catalog
+# ✔ https://catalog.mosaic.example — new remoteEntry.js is live
+```
+
+### 4. (Optional) Runtime remote registration
+
+If you'd rather choose a remote's URL — or pin a specific versioned path like `/v2/remoteEntry.js` — entirely at runtime instead of at the shell's build, register it with the runtime API. This lets the shell adopt a new remote or a canary URL with no rebuild at all.
+
+```ts
+import { registerRemotes, loadRemote } from '@module-federation/runtime';
+
+// Point at a versioned path decided at runtime (flag, canary, A/B).
+registerRemotes([
+  {
+    name: 'catalog',
+    entry: 'https://catalog.mosaic.example/v2/remoteEntry.js',
+    type: 'module',
+  },
+]);
+
+const { default: Catalog } = await loadRemote('catalog/Catalog');
+```
+
+## Verify
+
+Prove the rollout reaches visitors and that the shell was never rebuilt.
+
+```bash
+# The live entry is served fresh (not cached), so a new deploy is seen promptly
+curl -sI https://catalog.mosaic.example/remoteEntry.js | grep -i 'cache-control'
+# cache-control: no-cache
+
+# The manifest reports the build that's actually live
+curl -s https://catalog.mosaic.example/mf-manifest.json | python3 -c \
+  'import sys,json; print(json.load(sys.stdin)["metaData"].get("buildId"))'
+# 4f2a9c1   ← your new GIT_SHA
+```
+
+Now do the end-to-end check with the shell you deployed in the previous lesson **still running its old build**:
+
+1. Note the catalog's current look in a browser at the shell's URL.
+2. Deploy a visible catalog-only change (steps above). The shell is **not** rebuilt or redeployed.
+3. Hard-reload the shell. The new catalog appears — because the shell re-fetched `remoteEntry.js` and got the new manifest. The `mf-manifest.json` `buildId` matches your latest `GIT_SHA`, confirming exactly which version is live.
+
+```bash
+# Confirm the shell was untouched: its last deploy predates the catalog change
+pnpm dlx wrangler pages deployment list --project-name mosaic-shell | head -3
+# The shell's latest deployment timestamp is OLDER than the catalog's — proof.
+```
+
+You shipped one team without rebuilding the others. That single property is what the shell-loads-remotes-at-runtime design, the Web-Component boundary, the per-remote BFFs, and the decoupled event bus all exist to make safe.
+
+Check your understanding:
+
+1. When the catalog team deploys a new build, what does the shell have to rebuild — and why is the answer "nothing"?
+2. Why must `remoteEntry.js` carry a `no-cache` header while the hashed `/assets/*` chunks can cache for a year?
+3. Versioning a remote's *own* code is free, but changing a *shared* dependency's major version is not. What does Module Federation do at load time to keep that safe, and what does it cost you compared to a single-build monolith?
+4. What does `registerRemotes()` at runtime let you do that setting `entry` in the shell's `vite.config.ts` does not?
+
+## Recap
+
+You versioned a remote and rolled it out: a new `remoteEntry.js` published at a stable URL, picked up by the shell on the next load, with a stamped manifest to prove which build is live — and the shell and the cart never rebuilt. That's the "ship one team" payoff proven end to end, along with the cache and shared-version details that keep it safe.
+
+You've now built Mosaic from an empty repo to independently deployable, independently versioned slices composed at runtime. Time to step back and name what you learned: [Wrap-up →](/mosaic/en/wrap-up/).
