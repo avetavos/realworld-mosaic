@@ -1,0 +1,199 @@
+---
+title: The React host
+description: "Scaffold React shell app ด้วย Vite — layout, top-nav, และโครง app ที่จะ compose ทุก remote"
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+**shell** — React app ที่เป็นเจ้าของทุกอย่างที่แชร์กันทั่ว Mosaic: layout, top-nav และ (อีกไม่นาน) session กับ top-level routing บทนี้เราสร้าง shell เป็น React + Vite app ธรรมดา ที่มี layout จริงและ slot ที่ remote จะ mount ลงไป มันรันที่ **port 5000** ยังไม่มี federation — นั่นคือ[บทถัดไป](/mosaic/th/shell/host-config/) ก่อนอื่นเราต้องมี host ที่คุ้มค่าจะ host เข้าไป
+
+## Why
+
+ในระบบ micro-frontend ต้องมี app ตัวหนึ่งเป็นเจ้าของ *กรอบ*: header ที่ user เห็นทุกหน้า, navigation ระหว่างพื้นที่, session, routing นั่นคือ shell (หรือ "host") ทุกอย่างที่เหลือ — catalog, cart, content — คือ **remote** ที่ mount *ข้างใน* layout ของ shell
+
+การทำ shell ให้เป็น React app ธรรมดาก่อน แล้วค่อยเพิ่ม Module Federation เป็นเรื่องตั้งใจ federation คือเรื่องของ runtime ที่วางทับบน Vite build ธรรมดา; ถ้า shell รันและ render ด้วยตัวเองไม่ได้ federation config เท่าไรก็ช่วยไม่ได้ การวาง host ที่สะอาด — layout, nav, mount slot — ให้ remote ทุกตัวทีหลังมีที่ลงที่มั่นคง และให้เรามี app ที่ทำงานได้ไว้ verify ในแต่ละ step
+
+shell เป็น React เพราะ ecosystem ของ React คือแกนหลักของซีรีส์นี้ และเพราะการแชร์ React เป็น singleton กับ React remote (catalog) คือเส้นทาง interop ที่ง่ายที่สุด remote ที่ไม่ใช่ React (Svelte cart) mount ผ่าน boundary แบบ Web Component แทน — แต่นั่นไว้ทีหลัง
+
+## Pros & cons
+
+**A dedicated host app vs. no host (peer remotes)**
+
+- **Pros:** มีที่เดียวเป็นเจ้าของ layout, nav, session และ routing user จึงเห็น app เดียวที่กลมกลืน; remote โฟกัสอยู่กับ slice ของมัน; มี entry point เดียวชัด ๆ ให้โหลด
+- **Cons:** host เป็น shared dependency ที่ทุกทีมพึ่งพา — เปลี่ยนกรอบทีกระทบทุกคน จึงต้องมี ownership ที่รอบคอบ และมันกลายเป็นคอขวดได้ถ้าโตเกิน "กรอบ" การรักษาให้มันบางคือวินัย
+
+**Building the host as plain React first vs. adding federation immediately**
+
+- **Pros:** app รันและ render ได้ตั้งแต่ step แรก; verify layout แยกเดี่ยว ๆ ได้; federation กลายเป็นการเพิ่มเข้ามา ไม่ใช่เงื่อนไขบังคับให้อะไรทำงานได้
+- **Cons:** คุณจะไม่เห็น remote โหลดจนกว่าบทถัดไป — เลื่อนความ "ว้าว" ออกไปเพื่อแลกกับรากฐานที่ debug ได้จริง
+
+## Set it up
+
+### 1. `apps/shell/package.json`
+
+shell เป็น React + Vite app มันรันที่ port 5000 และตอนนี้พึ่งแค่ React กับ Vite React plugin
+
+```json
+{
+  "name": "shell",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5000 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --port 5000 --strictPort",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0"
+  }
+}
+```
+
+`--strictPort` ทำให้ Vite fail แบบดังชัดถ้า port 5000 ถูกใช้อยู่ แทนที่จะเงียบ ๆ เลือก port อื่น — สำคัญเมื่อ remote คาดหวังว่า shell อยู่ที่ origin ตายตัว
+
+### 2. `apps/shell/vite.config.ts`
+
+ตอนนี้มีแค่ React plugin กับ port Module Federation plugin, `server.origin` และ `build.target` เพิ่มในบทถัดไป — ไฟล์นี้จะโตขึ้นเป็น host config
+
+```ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5000,
+  },
+});
+```
+
+### 3. `apps/shell/index.html`
+
+entry HTML ของ Vite ที่ mount React root
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mosaic</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+```
+
+### 4. `apps/shell/src/main.tsx`
+
+React 18 client entry มาตรฐาน
+
+```tsx
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { App } from './App';
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);
+```
+
+### 5. `apps/shell/src/App.tsx`
+
+กรอบ header ที่มี brand และ top-nav กับ `<main>` ที่เป็น **mount slot** สำหรับ remote ตอนนี้ slot ถือ placeholder ไว้; ในบทถัดไป remote จริงจะ render ตรงนั้น
+
+```tsx
+export function App() {
+  return (
+    <div className="shell">
+      <header className="shell__header">
+        <a className="shell__brand" href="/">
+          🧩 Mosaic
+        </a>
+        <nav className="shell__nav">
+          <a href="/">Catalog</a>
+          <a href="/cart">Cart</a>
+          <a href="/about">About</a>
+        </nav>
+      </header>
+
+      <main className="shell__main">
+        {/* Remotes mount here. For now, a placeholder. */}
+        <section className="shell__slot">
+          <h1>Welcome to Mosaic</h1>
+          <p>The shell is running. Remotes will load into this slot at runtime.</p>
+        </section>
+      </main>
+    </div>
+  );
+}
+```
+
+### 6. `apps/shell/src/index.css` (optional, imported from `main.tsx`)
+
+แค่พอให้กรอบอ่านออกระหว่างที่เราทำงาน styling จริงมาพร้อม[design system](/mosaic/th/design-system/)
+
+```css
+.shell__header {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+.shell__brand { font-weight: 700; text-decoration: none; color: #8b5cf6; }
+.shell__nav { display: flex; gap: 1rem; }
+.shell__main { padding: 1.5rem; }
+```
+
+## Verify
+
+install แล้วเริ่ม shell:
+
+```bash
+pnpm install
+pnpm --filter shell dev
+```
+
+output ที่คาดหวัง:
+
+```
+  VITE ready
+  ➜  Local:   http://localhost:5000/
+```
+
+เปิด `http://localhost:5000/` คุณควรเห็น header **🧩 Mosaic**, nav link สามอัน และ placeholder "The shell is running" ใน main slot จากนั้นยืนยันว่ามัน build สะอาด — check ที่ทุกบทจบด้วย:
+
+```bash
+pnpm --filter shell build
+```
+
+คาดหวัง: build สำเร็จ เขียน `dist/` โดยไม่มี error ด้าน type หรือ bundle dev server ที่รันอยู่ *และ* build ที่สะอาดแปลว่า host แข็งแรงพอจะ federate เข้าไป
+
+**Check your understanding:**
+
+1. shell เป็นเจ้าของอะไรที่ remote ไม่เป็น และทำไมต้องมี app เดียวเป๊ะ ๆ เป็นเจ้าของมัน?
+2. ทำไมต้อง build shell เป็น React app ธรรมดา *ก่อน* เพิ่ม Module Federation แทนที่จะ config federation ตั้งแต่ต้น?
+3. shell เป็น React และแชร์ React กับ catalog remote แต่ Svelte cart mount ด้วยวิธีต่างออกไป boundary ที่ remote ที่ไม่ใช่ React ใช้แทนคืออะไร?
+4. ทำไม dev script ถึงใช้ `--strictPort` บน port 5000?
+
+## Recap
+
+shell รันแล้ว: React + Vite app บน port 5000 ที่มี header, top-nav และ mount slot `<main>` รอ remote อยู่ ตอนนี้มันเป็น app ธรรมดา — ซึ่งคือประเด็น federation คือ layer ถัดไป ไม่ใช่รากฐาน
+
+ทีนี้มาเปลี่ยน host นี้ให้เป็น *host* จริง ๆ ด้วยการเพิ่ม Module Federation config แล้วโหลด remote ตัวแรก
+
+Next → [Host config →](/mosaic/th/shell/host-config/)

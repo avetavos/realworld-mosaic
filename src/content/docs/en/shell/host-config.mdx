@@ -1,0 +1,173 @@
+---
+title: Host config
+description: "Add the Module Federation host config to the shell — remotes, server.origin, and loading a remote with React.lazy + Suspense."
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+The shell becomes a **host**. We add the `@module-federation/vite` plugin to the shell's Vite config, declare the `catalog` and `cart` remotes by their `remoteEntry.js` URLs, share React as a singleton, and then load the catalog remote at runtime with `React.lazy(() => import('catalog/Catalog'))` behind a `<Suspense>`.
+
+The catalog remote itself doesn't exist yet — it's built in [Module 4](/mosaic/en/catalog/). What we build here is the *host side* of the contract: the config and the loading code, ready for a real remote to satisfy. This is the config every later module depends on being exactly right, so we follow it precisely.
+
+## Why
+
+A host's job is to load code it did **not** build, from a URL, at runtime. Module Federation makes that a first-class capability instead of a hand-rolled script loader. The `remotes` map tells the host *where* each remote's entry file lives; the `shared` list tells the runtime which dependencies must be a single shared instance rather than one-copy-per-remote.
+
+`React.lazy` + `<Suspense>` is the idiomatic way to consume a federated React component. `import('catalog/Catalog')` looks like a normal dynamic import, but the module specifier `catalog/Catalog` is *virtual* — the federation runtime resolves `catalog` to the `remoteEntry.js` we configured, fetches it over the network, and returns the exposed `./Catalog` module. To React it's just a lazy component; the network round-trip is invisible.
+
+`server.origin` matters more than it looks. It tells Vite the absolute origin the shell is served from, so the URLs the federation runtime generates are absolute and correct across origins — without it, a remote loaded from `localhost:5001` can build broken asset URLs relative to the wrong host.
+
+## Pros & cons
+
+**Runtime remote loading vs. build-time import**
+
+- **Pros:** The catalog team ships a new catalog and the shell picks it up on the next page load — no shell rebuild, no shell redeploy. That single property is the entire reason this architecture exists.
+- **Cons:** A remote is a network dependency: it can be slow, be a version behind, or fail to load entirely. The shell must handle latency (`<Suspense>`) and failure (error boundaries, in [Module 12](/mosaic/en/resilience/)) — problems a build-time import never has.
+
+**Sharing React as a singleton vs. each remote bundling its own**
+
+- **Pros:** React loads once. Hooks, context, and `React.lazy` work across the host/remote boundary because there's one React instance, not two fighting over one DOM.
+- **Cons:** The host and remote must agree on a compatible React version; a hard mismatch surfaces at runtime. The shared-singleton mechanics are the whole subject of [Shared singletons](/mosaic/en/federation/shared-singletons/).
+
+## Set it up
+
+### 1. `apps/shell/vite.config.ts`
+
+Add the `federation` plugin to the config from the previous lesson. Three things beyond the plugin are **required** for a Vite MF host: `server.origin`, `build.target: 'esnext'` (federated remotes are ES modules and use top-level `await`), and the remotes declared as `type: 'module'`.
+
+```ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { federation } from '@module-federation/vite';
+
+export default defineConfig({
+  plugins: [
+    react(),
+    federation({
+      name: 'shell',
+      remotes: {
+        catalog: {
+          type: 'module',
+          name: 'catalog',
+          entry: 'http://localhost:5001/remoteEntry.js',
+          entryGlobalName: 'catalog',
+          shareScope: 'default',
+        },
+        cart: {
+          type: 'module',
+          name: 'cart',
+          entry: 'http://localhost:5002/remoteEntry.js',
+          entryGlobalName: 'cart',
+          shareScope: 'default',
+        },
+      },
+      filename: 'remoteEntry.js',
+      shared: ['react', 'react-dom'],
+    }),
+  ],
+  server: {
+    port: 5000,
+    origin: 'http://localhost:5000',
+  },
+  build: {
+    target: 'esnext',
+  },
+});
+```
+
+Every field is load-bearing: `type: 'module'` because Vite remotes are ES modules; `shareScope: 'default'` so host and remotes negotiate shared deps in the same scope; `shared: ['react', 'react-dom']` so React is a singleton. These exact values recur in every module — treat them as the contract.
+
+### 2. `apps/shell/src/remotes.d.ts`
+
+The virtual modules `catalog/*` and `cart/*` don't exist on disk, so TypeScript can't resolve them. Declare them so `import('catalog/Catalog')` type-checks.
+
+```ts
+declare module 'catalog/Catalog' {
+  import type { ComponentType } from 'react';
+  const Catalog: ComponentType;
+  export default Catalog;
+}
+
+declare module 'cart/register' {
+  // The Svelte cart exposes a side-effecting registrar (defines <cart-app>).
+  const register: void;
+  export default register;
+}
+```
+
+### 3. `apps/shell/src/App.tsx`
+
+Consume the catalog remote. `React.lazy` wraps the virtual import; `<Suspense>` shows a fallback while `remoteEntry.js` is fetched and evaluated. The mount slot from the previous lesson now holds a real (federated) component.
+
+```tsx
+import { lazy, Suspense } from 'react';
+
+// Virtual specifier — resolved to catalog's remoteEntry.js at runtime.
+const Catalog = lazy(() => import('catalog/Catalog'));
+
+export function App() {
+  return (
+    <div className="shell">
+      <header className="shell__header">
+        <a className="shell__brand" href="/">🧩 Mosaic</a>
+        <nav className="shell__nav">
+          <a href="/">Catalog</a>
+          <a href="/cart">Cart</a>
+          <a href="/about">About</a>
+        </nav>
+      </header>
+
+      <main className="shell__main">
+        <Suspense fallback={<p>Loading catalog…</p>}>
+          <Catalog />
+        </Suspense>
+      </main>
+    </div>
+  );
+}
+```
+
+## Verify
+
+The catalog remote doesn't exist yet, so we verify the *host side* is wired correctly — a config error surfaces at build time regardless of whether the remote is up.
+
+Type-check that the virtual modules and config resolve:
+
+```bash
+pnpm --filter shell typecheck
+```
+
+Expected: no errors — `remotes.d.ts` makes `import('catalog/Catalog')` a known type.
+
+Build the host with federation enabled:
+
+```bash
+pnpm --filter shell build
+```
+
+Expected: a clean build. Crucially, inspect the output — the federation plugin emits the host's own `remoteEntry.js`:
+
+```bash
+ls apps/shell/dist/ | grep remoteEntry
+```
+
+Expected: `remoteEntry.js` is present. That file existing proves the plugin ran and the host is federation-ready.
+
+When you run `pnpm --filter shell dev` now, the shell loads and *attempts* to fetch `http://localhost:5001/remoteEntry.js`. Until the catalog remote is running that request fails in the console — expected, and exactly the failure mode [Module 12](/mosaic/en/resilience/) teaches you to handle. The host is correct; it's waiting for a remote.
+
+**Check your understanding:**
+
+1. `import('catalog/Catalog')` looks like a normal dynamic import. What actually happens at runtime that a normal import wouldn't do?
+2. Why is `build.target: 'esnext'` required for a Module Federation host in Vite?
+3. What does `server.origin` prevent from going wrong when a remote loads from a different port?
+4. With the config done but no catalog remote running, the shell logs a failed fetch for `remoteEntry.js`. Why is that the *expected* state at the end of this lesson, and which module addresses it properly?
+
+## Recap
+
+The shell is now a host: the `federation` plugin is configured with the `catalog` and `cart` remotes, React is shared as a singleton, `server.origin` and `esnext` are set, and `App.tsx` loads the catalog via `React.lazy` + `<Suspense>`. The host emits its own `remoteEntry.js` and is ready for a real remote to satisfy the contract.
+
+You've configured federation from the host's side. Next, build the *other* side — a minimal remote that exposes a module, and watch the host consume it end to end.
+
+Next → [Module Federation Core →](/mosaic/en/federation/)
