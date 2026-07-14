@@ -1,0 +1,54 @@
+---
+title: Overview
+description: "What Mosaic is, the feature list, and the map from each build module to the Learn Hub course it adapts."
+sidebar:
+  order: 1
+---
+
+## What Mosaic is
+
+Mosaic is a **micro-frontend storefront**. From the outside it's one shopping site: a header, a product catalog, a cart, a checkout, and some marketing pages. From the inside it's **several independent applications**, each built and deployed on its own, composed into a single experience in the browser at runtime.
+
+That inside/outside split is the whole point. A **micro-frontend** architecture takes the idea behind microservices — independent teams, independent deploys, independent technology choices — and applies it to the *frontend*. In Mosaic, the catalog is a **React** app, the cart is a **Svelte** app, the content pages are an **Astro** app, and a **React shell** composes them. No team blocks another; each ships when it's ready; and the user never sees the seams.
+
+The point of the project isn't the storefront — it's the **composition**: how independently-built, independently-deployed frontends in *different frameworks* become one coherent app. **Module Federation 2.0** loads them at runtime, **Web Components** give every framework a common mounting boundary, an **event bus** lets them communicate without importing each other, and a shared **design system** keeps them looking like one product. Each remote also owns a thin **Hono** backend-for-frontend, so a micro-frontend is a true vertical slice — UI *and* its data — that deploys end to end on its own.
+
+## The feature set
+
+- **A React shell** — the host: layout, top-nav, auth/session, top-level routing, and runtime loading of every remote.
+- **Catalog (React)** — browse and search products, from its own BFF.
+- **Cart & Checkout (Svelte)** — a cart and a simple checkout, mounted in the React shell via a Web Component.
+- **Content/Marketing (Astro)** — SSR/static, SEO-friendly pages, integrated into the composition.
+- **A shared design system** — tokens and primitives as Web Components, used by all three frameworks.
+- **Cross-MFE communication** — a decoupled event bus for things like "add to cart."
+- **Independent deployment** — every slice (UI + BFF) ships on its own.
+
+## The course map
+
+Each build module adapts a Learn Hub course to one slice of Mosaic.
+
+| Module | What you build | Learn Hub course it adapts |
+| --- | --- | --- |
+| 1 · Setup & Tooling | The pnpm monorepo, Vite, the Module Federation plugin, the Hono BFF stack | Frontend tooling |
+| 2 · The Shell (Host) | The React host: layout, nav, routing, host config | React |
+| 3 · Module Federation Core | Exposing and consuming remotes at runtime | Micro-frontends |
+| 4 · Catalog Remote (React) | A React remote and its thin Hono BFF | React |
+| 5 · Web Components Interop | A remote wrapped as a custom element | Web Components |
+| 6 · Cart Remote (Svelte) | A Svelte remote mounted via a web component | Svelte |
+| 7 · Content Remote (Astro) | An Astro SSR/static app in the composition | Astro |
+| 8 · Cross-MFE Communication | A decoupled event bus | Micro-frontends |
+| 9 · Shared Auth & State | A session shared across MFEs | Browser storage |
+| 10 · Shared Design System | Web-component primitives for every framework | Web Components |
+| 11 · Routing Across MFEs | Shell and remote routing, deep-linking | React / routing |
+| 12 · Resilience & Performance | Fallbacks, lazy loading, shared-dep dedupe | Frontend performance |
+| 13 · Independent Deployment | Per-slice deploy and versioning | Docker / CI |
+
+## Verify
+
+You're ready to move on when you can answer these in your own words:
+
+- What does a micro-frontend architecture borrow from microservices, and what problem is it solving on the frontend?
+- Which three frameworks make up Mosaic's remotes, and what composes them into one app?
+- Why does each remote own its own backend-for-frontend instead of all remotes sharing one API?
+
+Next, the [architecture](/mosaic/en/introduction/architecture/) shows how the pieces fit together.

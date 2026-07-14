@@ -1,0 +1,67 @@
+---
+title: Mosaic
+description: คอร์สลงมือทำแบบสองภาษา ที่คุณจะสร้าง Mosaic — storefront ที่ประกอบขึ้นจาก micro-frontend ที่ deploy แยกกันอิสระ โดยมี React shell คอย compose remote ของ React, Svelte และ Astro เข้าด้วยกันตอน runtime ด้วย Module Federation 2.0, ใช้ Web Components เป็น boundary กลาง และแต่ละ slice มี Hono BFF บาง ๆ เป็นของตัวเอง
+template: splash
+hero:
+  tagline: สร้าง Mosaic — storefront ที่ทำจาก micro-frontend ที่ deploy แยกกันอิสระ React shell จะ compose remote ของ React, Svelte และ Astro เข้าด้วยกันตอน runtime ด้วย Module Federation 2.0, Web Components เชื่อม framework ต่าง ๆ เข้าหากัน และแต่ละ slice เป็นเจ้าของ UI กับ backend แบบ Hono บาง ๆ ของตัวเอง
+  actions:
+    - text: เริ่มที่นี่
+      link: /mosaic/th/introduction/
+      icon: right-arrow
+      variant: primary
+    - text: ดู architecture
+      link: /mosaic/th/introduction/architecture/
+      icon: rocket
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What you'll build
+
+<CardGrid>
+  <Card title="Introduction" icon="open-book">
+    ทำไมต้อง Mosaic, คอร์สนี้ถูกจัดโครงสร้างอย่างไร และคุณจะได้สร้างอะไรเมื่อจบคอร์ส [Open →](/mosaic/th/introduction/)
+  </Card>
+  <Card title="Setup & Tooling" icon="setting">
+    pnpm monorepo, Vite, layout ของ shell + remote, Module Federation และ Hono BFF stack [Open →](/mosaic/th/setup/)
+  </Card>
+  <Card title="The Shell (Host)" icon="laptop">
+    สร้าง React host: layout, top-nav, โครง routing และ Module Federation host config [Open →](/mosaic/th/shell/)
+  </Card>
+  <Card title="Module Federation Core" icon="puzzle">
+    Expose และ consume remote ตอน runtime ด้วย `remoteEntry` และ shared singleton [Open →](/mosaic/th/federation/)
+  </Card>
+  <Card title="Catalog Remote (React)" icon="list-format">
+    ส่ง federated remote ตัวแรก — catalog แบบ React ที่มี Hono BFF บาง ๆ ของตัวเอง [Open →](/mosaic/th/catalog/)
+  </Card>
+  <Card title="Web Components Interop" icon="seti:html">
+    ห่อ remote ให้เป็น custom element เพื่อให้ framework ไหนก็ mount มันได้ [Open →](/mosaic/th/web-components/)
+  </Card>
+  <Card title="Cart Remote (Svelte)" icon="seti:svelte">
+    สร้าง cart + BFF ด้วย Svelte แล้ว mount เข้า React shell ผ่าน web component [Open →](/mosaic/th/cart/)
+  </Card>
+  <Card title="Content Remote (Astro)" icon="astro">
+    ผนวก Astro app แบบ SSR/static เข้ากับการ compose — และจุดที่มัน federate ไม่ได้ [Open →](/mosaic/th/content/)
+  </Card>
+  <Card title="Cross-MFE Communication" icon="random">
+    ต่อสาย event bus แบบ decoupled ให้ remote คุยกันได้โดยไม่ต้อง import กันและกัน [Open →](/mosaic/th/communication/)
+  </Card>
+  <Card title="Shared Auth & State" icon="approve-check">
+    แชร์ session เดียวข้ามทุก micro-frontend โดยไม่ผูกกันแน่นเกินไป [Open →](/mosaic/th/auth-state/)
+  </Card>
+  <Card title="Shared Design System" icon="seti:css">
+    สร้าง token และ web-component primitive ที่ React, Svelte และ Astro ใช้ร่วมกันได้ทั้งหมด [Open →](/mosaic/th/design-system/)
+  </Card>
+  <Card title="Routing Across MFEs" icon="right-arrow">
+    ให้ shell เป็นเจ้าของ route ระดับบน และ remote เป็นเจ้าของ sub-route ของตัวเอง พร้อม deep-linking [Open →](/mosaic/th/routing/)
+  </Card>
+  <Card title="Resilience & Performance" icon="warning">
+    จัดการเคส remote โหลดล้มเหลว, lazy-load, dedupe shared dependency และ isolate error [Open →](/mosaic/th/resilience/)
+  </Card>
+  <Card title="Independent Deployment" icon="cloud-download">
+    Deploy แต่ละ slice (UI + BFF) แยกกัน — ส่งงานของทีมเดียวได้โดยไม่ต้อง redeploy ตัวอื่น [Open →](/mosaic/th/deployment/)
+  </Card>
+  <Card title="Wrap-up" icon="star">
+    ทบทวนสิ่งที่คุณสร้าง, trade-off ต่าง ๆ และจะพา Mosaic ไปต่อทางไหนได้บ้าง [Open →](/mosaic/th/wrap-up/)
+  </Card>
+</CardGrid>

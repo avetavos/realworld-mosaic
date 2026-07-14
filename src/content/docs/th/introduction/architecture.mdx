@@ -1,0 +1,60 @@
+---
+title: Architecture
+description: "shell, remote ต่าง ๆ, Web-Component boundary และทำไม micro-frontend ถึงถูกจัดโครงสร้างแบบนี้"
+sidebar:
+  order: 2
+---
+
+## The shape of the system
+
+Mosaic คือ **shell เดียวที่ compose remote หลายตัวที่ deploy แยกกันอิสระตอน runtime**
+
+```mermaid
+flowchart TD
+    Shell["React shell (host)<br/>layout · nav · auth · routing"]
+    MF{{"Module Federation 2.0<br/>runtime composition"}}
+    Catalog["Catalog remote<br/>React + Hono BFF"]
+    Cart["Cart remote<br/>Svelte + Hono BFF"]
+    Content["Content remote<br/>Astro (SSR/static)"]
+    Bus["Event bus (custom events)"]
+
+    Shell --> MF
+    MF -->|"remoteEntry"| Catalog
+    MF -->|"remoteEntry"| Cart
+    MF -->|"WC / SSR compose"| Content
+    Catalog <--> Bus
+    Cart <--> Bus
+    Shell <--> Bus
+```
+
+**shell** เป็น React app ที่เป็นเจ้าของทุกอย่างที่แชร์ร่วมกัน: layout, top-nav, session และ route ระดับบน มัน **ไม่** import remote ตอน build time — แต่โหลดพวกมันตอน **runtime** จาก URL ของ `remoteEntry` แต่ละตัว ดังนั้นทีม catalog จะ deploy catalog ตัวใหม่ได้ แล้ว shell จะรับมันมาใช้ในการโหลดครั้งถัดไป โดยไม่ต้อง rebuild ทั้ง shell และ remote ตัวอื่น คุณสมบัติเดียวนั้น — **independent deployment** — คือสิ่งที่ทุกอย่างที่เหลือในสถาปัตยกรรมนี้มีอยู่เพื่อทำให้มันปลอดภัย
+
+## Why this shape
+
+single-page app แบบดั้งเดิมคือ build เดียว deploy เดียว release train ของทีมเดียว micro-frontend แยกสิ่งนั้นออกจากกันแบบเดียวกับที่ microservices แยก monolithic backend ออกจากกัน:
+
+- **Independent deploys** remote แต่ละตัว build และส่งงานตามตารางของตัวเอง การส่ง cart ไม่ทำให้ต้อง rebuild catalog
+- **Independent tech** catalog เป็น React, cart เป็น Svelte, content เป็น Astro — แต่ละทีมเลือกตัวที่เข้ากับงาน และ shell ไม่สนใจ
+- **Vertical ownership** remote แต่ละตัวเป็นเจ้าของ **UI และ data ของมัน** (Hono BFF บาง ๆ) slice จึงเป็น feature เต็ม ๆ ที่ทีมเดียวเป็นเจ้าของได้ตั้งแต่ต้นจนจบ
+
+ต้นทุนนั้นมีจริงและควรพูดให้ชัดตั้งแต่ต้น: การ compose app อิสระตอน runtime นำมาซึ่งปัญหาที่ SPA เดียวไม่เคยมี — shared dependency ต้องถูก dedupe, remote อาจโหลดล้มเหลว, style และ routing ต้องประสานกันข้ามทีม และการสื่อสารต้อง decoupled อยู่เสมอ module ส่วนใหญ่ของ Mosaic มีอยู่เพื่อแก้ปัญหาพวกนี้เป๊ะ ๆ
+
+## The pieces
+
+- **Shell (host)** — React + Vite + **Module Federation 2.0** โหลด remote ตอน runtime เป็นเจ้าของ layout/nav/auth/routing
+- **Catalog remote** — React + **Hono** BFF บาง ๆ ถูก expose เป็น federated module
+- **Cart remote** — Svelte + Hono BFF ที่ mount เข้า React shell ผ่านตัวห่อแบบ **Web Component**
+- **Content remote** — **Astro** (SSR/static) Astro ไม่ runtime-federate แบบ SPA มันจึงถูกผนวกเข้ามาผ่านเส้นทาง Web-Component / SSR-composition — เป็นบทเรียนที่ตั้งใจให้เห็นข้อจำกัดของ Module Federation
+- **Web Components** — boundary กลางสำหรับ mount และ **design system** ที่แชร์ร่วมกันซึ่งทุก framework ใช้
+- **Event bus** — custom event แบบ decoupled ให้ remote ตอบสนอง "add to cart" ได้โดยไม่ต้อง import กันและกัน
+
+## Verify
+
+คุณพร้อมไปต่อเมื่อคุณตอบคำถามพวกนี้ด้วยคำพูดของตัวเองได้:
+
+- ไล่ดูว่าเกิดอะไรขึ้นเมื่อทีม catalog deploy เวอร์ชันใหม่ อะไร rebuild และอะไรไม่ — และการเลือกเชิงสถาปัตยกรรมข้อไหนที่ทำให้เป็นแบบนั้น?
+- ทำไม shell ถึงโหลด remote ตอน *runtime* จาก `remoteEntry` แทนที่จะ import มันตอน build time?
+- Astro เป็น Module Federation remote แบบที่ React และ Svelte เป็นไม่ได้ ทำไม — และ Mosaic ผนวกมันเข้ามาได้อย่างไรถึงอย่างนั้น?
+- บอกปัญหาสองข้อที่ runtime composition นำมา แต่ SPA เดียวไม่เคยมี
+
+ต่อไป [prerequisites](/mosaic/th/introduction/prerequisites/) จะทำให้เครื่องของคุณพร้อม

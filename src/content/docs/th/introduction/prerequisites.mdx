@@ -1,0 +1,39 @@
+---
+title: Prerequisites
+description: "เครื่องมือที่ต้องติดตั้งก่อนเริ่ม Module 1 และความรู้ที่คอร์สนี้ถือว่าคุณมีอยู่แล้ว"
+sidebar:
+  order: 3
+---
+
+## What you'll install
+
+เครื่องมือแต่ละตัวจะถูกแนะนำใน module ที่ใช้มันเป็นครั้งแรก แต่นี่คือรายการเต็มเผื่อคุณอยากติดตั้งไว้ล่วงหน้า
+
+- **Node.js 20+** — runtime สำหรับทุก app และ BFF ในโปรเจกต์
+- **[pnpm](https://pnpm.io/) 9+** — package manager; Mosaic เป็น monorepo แบบ pnpm-workspaces (shell, remote ต่าง ๆ และ BFF ของพวกมันอยู่ใน repo เดียวกันหมด)
+- **Vite** — build tool สำหรับ shell และ remote ของ React/Svelte พร้อม **Module Federation** plugin (`@module-federation/vite`) ติดตั้งราย app ไม่ใช่แบบ global
+- **browser รุ่นใหม่** ที่มี DevTools — คุณจะได้ดู remote โหลดผ่าน network และ inspect custom element
+- **git** — ทีหลังคุณจะ deploy แต่ละ slice แยกกัน และ version control ทำให้เรื่อง "independent deploy" จับต้องได้จริง
+
+ไม่ต้องมี framework CLI แบบ global — แต่ละ app ถูก scaffold ด้วย Vite หรือ Astro ภายใน monorepo
+
+## What the course assumes
+
+Mosaic เป็นโปรเจกต์เชิงสถาปัตยกรรม frontend คุณจะได้ประโยชน์จากมันมากที่สุดถ้าคุณคุ้นเคยกับ:
+
+- **JavaScript/TypeScript** — module, `async`/`await` และ ES module `import` คอร์สนี้พึ่ง ESM หนักมาก เพราะการโหลด module ตอน runtime คือไอเดียทั้งหมด
+- **component framework สักตัว** — คุณไม่จำเป็นต้องรู้ทั้ง React, Svelte *และ* Astro ตั้งแต่แรก แต่ละตัวถูกแนะนำตอนที่ remote ของมันถูกสร้าง การมีพื้น React มาก่อนช่วยได้มากที่สุด เพราะ shell เป็น React
+- **แพลตฟอร์ม browser** — DOM, custom event และการได้ลอง **Web Components** (custom element) ครั้งแรก Module 5 จะสอนมันอย่างจริงจัง
+- **พื้นฐาน HTTP** — BFF พวกนี้เล็กจิ๋ว แต่คุณควรคุ้นกับการ fetch และ JSON response
+
+คุณ **ไม่** จำเป็นต้องมีประสบการณ์ micro-frontend หรือ Module Federation มาก่อน — นั่นแหละคือสิ่งที่คอร์สนี้มีไว้ให้
+
+## Verify
+
+คุณตั้งค่าเรียบร้อยเมื่อ:
+
+- `node --version` แสดง 20 ขึ้นไป และ `pnpm --version` แสดง 9 ขึ้นไป
+- `git --version` ทำงานได้
+- คุณเปิด panel **Network** และ **Elements** ใน DevTools ของ browser ได้ — คุณจะใช้ชีวิตอยู่ในนั้น
+
+ต่อไป [roadmap](/mosaic/th/introduction/roadmap/) จะแสดงว่า Mosaic อยู่ตรงไหนในซีรีส์ที่ใหญ่ขึ้น

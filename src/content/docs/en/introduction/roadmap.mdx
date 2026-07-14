@@ -1,0 +1,49 @@
+---
+title: Real-World Projects Roadmap
+description: "Mosaic is a micro-frontend project in a series that adapts the whole Learn Hub catalog into real applications. Here's where it fits and what's around it."
+sidebar:
+  order: 4
+---
+
+## Where Mosaic fits
+
+Mosaic is part of the **Real-World Projects** series. Each project takes a different real application and rebuilds it from an empty repo, deliberately drawing on a different slice of the Learn Hub courses — so that, taken together, they cover almost the entire catalog. Mosaic is the **micro-frontend** entry: where the others each ship one app, Mosaic ships *several*, in different frameworks, composed into one.
+
+## TaskFlow — realtime Kanban board ✅ live
+
+A Trello-style board where every change shows up live for everyone. A Rust backend, Redis for cache and fan-out, and an Astro frontend, brought up by Docker Compose.
+
+- **Stack:** Rust/Axum + PostgreSQL + Redis + WebSocket + Astro + Docker
+
+## DevBlog — headless CMS + blog ✅ live
+
+A content platform: authors write in a headless CMS, and a fast public blog renders it over a **GraphQL** API with SSR and ISR.
+
+- **Stack:** Node/NestJS + MongoDB + GraphQL + Next.js
+
+## ShopMicro — e-commerce microservices ✅ live
+
+An online store split into independent services that talk over **gRPC** and coordinate an order flow through **event streaming** — Kafka, RabbitMQ, a saga and the outbox pattern, on Kubernetes.
+
+- **Stack:** Go + gRPC + PostgreSQL + Kafka + RabbitMQ + Kubernetes
+
+## FitTrack — mobile-first fitness app ✅ live
+
+A workout tracker with a native mobile app and a web companion, backed by a Python API and a managed Postgres/auth platform — one backend, two clients.
+
+- **Stack:** Python/FastAPI + Supabase + Flutter + Svelte
+
+## Mosaic — micro-frontend storefront ← you are here
+
+A storefront composed of independently-deployed micro-frontends: a React shell composes React, Svelte, and Astro remotes at runtime with Module Federation, Web Components bridge the frameworks, and each slice owns its UI and a thin backend.
+
+- **Stack:** React + Svelte + Astro + Web Components + Module Federation 2.0 + Hono
+- **Adapts:** React, Svelte, Astro, Web Components, frontend architecture
+
+## The thread through the series
+
+Where ShopMicro split a *backend* into independent services, Mosaic splits a *frontend* into independent apps — the same organizational idea (independent teams, independent deploys, independent tech) applied at the other end of the stack. Taken together, they're two halves of one lesson about building software that many teams can ship without stepping on each other.
+
+## Verify
+
+You're oriented when you can say, in a sentence each, what Mosaic builds, which slice of the catalog it adapts, and how "micro-frontends" relate to the microservices idea from ShopMicro. Next, start [Module 1 · Setup & Tooling](/mosaic/en/setup/).

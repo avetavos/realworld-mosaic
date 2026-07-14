@@ -1,0 +1,67 @@
+---
+title: Mosaic
+description: A hands-on, bilingual course where you build Mosaic, a storefront composed of independently-deployed micro-frontends — a React shell that composes React, Svelte, and Astro remotes at runtime with Module Federation 2.0, Web Components as the universal boundary, and a thin Hono BFF per slice.
+template: splash
+hero:
+  tagline: Build Mosaic, a storefront made of independently-deployed micro-frontends. A React shell composes React, Svelte, and Astro remotes at runtime with Module Federation 2.0, Web Components glue the frameworks together, and each slice owns its UI and a thin Hono backend.
+  actions:
+    - text: Start here
+      link: /mosaic/en/introduction/
+      icon: right-arrow
+      variant: primary
+    - text: See the architecture
+      link: /mosaic/en/introduction/architecture/
+      icon: rocket
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What you'll build
+
+<CardGrid>
+  <Card title="Introduction" icon="open-book">
+    Why Mosaic, how the course is structured, and what you'll have built by the end. [Open →](/mosaic/en/introduction/)
+  </Card>
+  <Card title="Setup & Tooling" icon="setting">
+    A pnpm monorepo, Vite, the shell + remotes layout, Module Federation, and the Hono BFF stack. [Open →](/mosaic/en/setup/)
+  </Card>
+  <Card title="The Shell (Host)" icon="laptop">
+    Build the React host: layout, top-nav, routing skeleton, and the Module Federation host config. [Open →](/mosaic/en/shell/)
+  </Card>
+  <Card title="Module Federation Core" icon="puzzle">
+    Expose and consume remotes at runtime, with `remoteEntry` and shared singletons. [Open →](/mosaic/en/federation/)
+  </Card>
+  <Card title="Catalog Remote (React)" icon="list-format">
+    Ship the first federated remote — a React catalog with its own thin Hono BFF. [Open →](/mosaic/en/catalog/)
+  </Card>
+  <Card title="Web Components Interop" icon="seti:html">
+    Wrap a remote as a custom element so any framework can mount it. [Open →](/mosaic/en/web-components/)
+  </Card>
+  <Card title="Cart Remote (Svelte)" icon="seti:svelte">
+    Build a Svelte cart + BFF and mount it in the React shell through a web component. [Open →](/mosaic/en/cart/)
+  </Card>
+  <Card title="Content Remote (Astro)" icon="astro">
+    Integrate an SSR/static Astro app into the composition — and where it can't federate. [Open →](/mosaic/en/content/)
+  </Card>
+  <Card title="Cross-MFE Communication" icon="random">
+    Wire a decoupled event bus so remotes talk without importing each other. [Open →](/mosaic/en/communication/)
+  </Card>
+  <Card title="Shared Auth & State" icon="approve-check">
+    Share one session across every micro-frontend without tight coupling. [Open →](/mosaic/en/auth-state/)
+  </Card>
+  <Card title="Shared Design System" icon="seti:css">
+    Build tokens and web-component primitives that React, Svelte, and Astro all consume. [Open →](/mosaic/en/design-system/)
+  </Card>
+  <Card title="Routing Across MFEs" icon="right-arrow">
+    Let the shell own top routes and remotes own their sub-routes, with deep-linking. [Open →](/mosaic/en/routing/)
+  </Card>
+  <Card title="Resilience & Performance" icon="warning">
+    Handle remote-load failures, lazy-load, dedupe shared deps, and isolate errors. [Open →](/mosaic/en/resilience/)
+  </Card>
+  <Card title="Independent Deployment" icon="cloud-download">
+    Deploy each slice (UI + BFF) on its own — ship one team without redeploying the rest. [Open →](/mosaic/en/deployment/)
+  </Card>
+  <Card title="Wrap-up" icon="star">
+    Review what you built, the trade-offs, and where to take Mosaic next. [Open →](/mosaic/en/wrap-up/)
+  </Card>
+</CardGrid>

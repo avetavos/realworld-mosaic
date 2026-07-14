@@ -1,0 +1,54 @@
+---
+title: Overview
+description: "Mosaic คืออะไร, รายการ feature ทั้งหมด และแผนที่ว่าแต่ละ build module map กับคอร์ส Learn Hub ตัวไหนที่มันดัดแปลงมา"
+sidebar:
+  order: 1
+---
+
+## What Mosaic is
+
+Mosaic คือ **micro-frontend storefront** มองจากข้างนอกมันคือเว็บช้อปปิ้งเว็บเดียว: มี header, product catalog, cart, checkout และหน้า marketing สองสามหน้า แต่มองจากข้างในมันคือ **หลาย application ที่เป็นอิสระต่อกัน** แต่ละตัว build และ deploy แยกกันเอง แล้วถูก compose รวมเป็นประสบการณ์เดียวใน browser ตอน runtime
+
+การแยกข้างใน/ข้างนอกนี่แหละคือหัวใจทั้งหมด สถาปัตยกรรมแบบ **micro-frontend** เอาไอเดียเบื้องหลัง microservices — ทีมอิสระ, deploy อิสระ, เลือกเทคโนโลยีได้อิสระ — มาใช้กับ *frontend* ใน Mosaic นั้น catalog เป็น app แบบ **React**, cart เป็น app แบบ **Svelte**, หน้า content เป็น app แบบ **Astro** และมี **React shell** คอย compose ทั้งหมด ไม่มีทีมไหนบล็อกทีมอื่น แต่ละตัวส่งงานเมื่อพร้อม และ user ไม่เคยเห็นรอยต่อเลย
+
+จุดสำคัญของโปรเจกต์นี้ไม่ใช่ตัว storefront — แต่คือ **การ compose**: frontend ที่ build แยกกัน deploy แยกกัน และอยู่บน framework *คนละตัว* จะกลายเป็น app เดียวที่กลมกลืนได้อย่างไร **Module Federation 2.0** โหลดพวกมันตอน runtime, **Web Components** ให้ทุก framework มี boundary กลางร่วมกันสำหรับ mount, **event bus** ให้พวกมันสื่อสารกันได้โดยไม่ต้อง import กันและกัน และ **design system** ที่แชร์ร่วมกันทำให้ทุกตัวดูเหมือนเป็น product เดียว remote แต่ละตัวยังเป็นเจ้าของ backend-for-frontend แบบ **Hono** บาง ๆ ของตัวเองด้วย micro-frontend จึงเป็น vertical slice ที่แท้จริง — ทั้ง UI *และ* data ของมัน — ที่ deploy ครบ end to end ได้ด้วยตัวเอง
+
+## The feature set
+
+- **React shell** — ตัว host: layout, top-nav, auth/session, routing ระดับบน และการโหลด remote ทุกตัวตอน runtime
+- **Catalog (React)** — browse และค้นหาสินค้า จาก BFF ของตัวเอง
+- **Cart & Checkout (Svelte)** — cart กับ checkout แบบง่าย ๆ ที่ mount เข้า React shell ผ่าน Web Component
+- **Content/Marketing (Astro)** — หน้าแบบ SSR/static ที่เป็นมิตรกับ SEO ผนวกเข้ากับการ compose
+- **Design system ที่แชร์ร่วมกัน** — token และ primitive ในรูป Web Components ที่ทั้งสาม framework ใช้ร่วมกัน
+- **Cross-MFE communication** — event bus แบบ decoupled สำหรับเรื่องอย่าง "add to cart"
+- **Independent deployment** — ทุก slice (UI + BFF) ส่งงานแยกกันเอง
+
+## The course map
+
+แต่ละ build module ดัดแปลงคอร์ส Learn Hub มาใช้กับ slice หนึ่งของ Mosaic
+
+| Module | What you build | Learn Hub course it adapts |
+| --- | --- | --- |
+| 1 · Setup & Tooling | pnpm monorepo, Vite, Module Federation plugin, Hono BFF stack | Frontend tooling |
+| 2 · The Shell (Host) | React host: layout, nav, routing, host config | React |
+| 3 · Module Federation Core | Expose และ consume remote ตอน runtime | Micro-frontends |
+| 4 · Catalog Remote (React) | React remote และ Hono BFF บาง ๆ ของมัน | React |
+| 5 · Web Components Interop | remote ที่ถูกห่อเป็น custom element | Web Components |
+| 6 · Cart Remote (Svelte) | Svelte remote ที่ mount ผ่าน web component | Svelte |
+| 7 · Content Remote (Astro) | Astro app แบบ SSR/static ในการ compose | Astro |
+| 8 · Cross-MFE Communication | event bus แบบ decoupled | Micro-frontends |
+| 9 · Shared Auth & State | session ที่แชร์ข้าม MFE | Browser storage |
+| 10 · Shared Design System | web-component primitive สำหรับทุก framework | Web Components |
+| 11 · Routing Across MFEs | routing ของ shell และ remote, deep-linking | React / routing |
+| 12 · Resilience & Performance | fallback, lazy loading, dedupe shared-dep | Frontend performance |
+| 13 · Independent Deployment | deploy และทำ versioning แบบราย slice | Docker / CI |
+
+## Verify
+
+คุณพร้อมไปต่อเมื่อคุณตอบคำถามพวกนี้ด้วยคำพูดของตัวเองได้:
+
+- สถาปัตยกรรม micro-frontend หยิบยืมอะไรมาจาก microservices และมันกำลังแก้ปัญหาอะไรบน frontend?
+- framework สามตัวไหนที่ประกอบเป็น remote ของ Mosaic และอะไรคือตัวที่ compose พวกมันเป็น app เดียว?
+- ทำไม remote แต่ละตัวถึงเป็นเจ้าของ backend-for-frontend ของตัวเอง แทนที่จะให้ remote ทุกตัวใช้ API เดียวร่วมกัน?
+
+ต่อไป [architecture](/mosaic/th/introduction/architecture/) จะแสดงว่าชิ้นส่วนต่าง ๆ ประกอบเข้ากันอย่างไร

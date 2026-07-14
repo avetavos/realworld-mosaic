@@ -1,0 +1,39 @@
+---
+title: Prerequisites
+description: "The tools to install before Module 1, and the knowledge the course assumes."
+sidebar:
+  order: 3
+---
+
+## What you'll install
+
+Each tool is introduced in the module that first uses it, but here's the full list so you can set up ahead of time.
+
+- **Node.js 20+** — the runtime for every app and BFF in the project.
+- **[pnpm](https://pnpm.io/) 9+** — the package manager; Mosaic is a pnpm-workspaces monorepo (the shell, the remotes, and their BFFs all live in one repo).
+- **Vite** — the build tool for the shell and the React/Svelte remotes, with the **Module Federation** plugin (`@module-federation/vite`). Installed per-app, not globally.
+- **A modern browser** with DevTools — you'll watch remotes load over the network and inspect custom elements.
+- **git** — you'll deploy each slice independently later, and version control makes the "independent deploy" story concrete.
+
+No global framework CLIs are required — each app is scaffolded with Vite or Astro inside the monorepo.
+
+## What the course assumes
+
+Mosaic is a frontend-architecture project. You'll get the most out of it if you're comfortable with:
+
+- **JavaScript/TypeScript** — modules, `async`/`await`, and ES module `import`. The course leans on ESM heavily, since runtime module loading is the whole idea.
+- **One component framework** — you don't need all of React, Svelte, *and* Astro up front; each is introduced as its remote is built. Prior React helps most, since the shell is React.
+- **The browser platform** — the DOM, custom events, and a first taste of **Web Components** (custom elements). Module 5 teaches them properly.
+- **HTTP basics** — the BFFs are tiny, but you should be comfortable with a fetch and a JSON response.
+
+You do **not** need prior micro-frontend or Module Federation experience — that's what the course is for.
+
+## Verify
+
+You're set up when:
+
+- `node --version` shows 20 or newer, and `pnpm --version` shows 9 or newer.
+- `git --version` works.
+- You can open a browser's DevTools **Network** and **Elements** panels — you'll live in them.
+
+Next, the [roadmap](/mosaic/en/introduction/roadmap/) shows where Mosaic fits in the wider series.
