@@ -1,0 +1,194 @@
+---
+title: The Session Singleton
+description: "Build @mosaic/session — a mock, localStorage-backed session shared as a Module Federation singleton so every MFE sees one identity."
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+The `@mosaic/session` package: a single, shared store for "who is signed in". It's a mock (any name signs you in, state lives in `localStorage`, no real auth) with a small, deliberate API:
+
+```ts
+import { getSession, signIn, signOut, subscribe } from '@mosaic/session';
+
+getSession();          // -> { userId, name } | null
+signIn('Ada');         // sets the session, persists it, notifies everyone
+signOut();             // clears it
+const off = subscribe((session) => { /* react to changes */ });
+off();                 // stop listening
+```
+
+The critical part isn't the code — it's that this package is a **Module Federation singleton**. Every micro-frontend imports the *same* instance, so there is exactly one session on the page. Sign in once and the whole app agrees. It also announces every change on [`@mosaic/bus`](/mosaic/en/communication/the-event-bus/) as `auth:changed`, so even code that doesn't import the session can react.
+
+## Why
+
+Identity is the one piece of state that genuinely spans every remote. The catalog might greet you by name, the cart needs to know whose cart it is, the shell shows a sign-in/out control. In a single SPA this is one context provider. Across independently-deployed remotes it's a trap: if each remote keeps its own copy of "current user", they drift — the shell thinks you're Ada, the cart still thinks you're a guest.
+
+Two properties fix that:
+
+- **One instance.** The session is a module-level store (`let current`). If each remote bundles its own copy, each has its own `current`, and signing in one doesn't touch the others. Marking `@mosaic/session` a **singleton** in Module Federation forces one shared copy for the whole page — the same discipline the bus needed, for the same reason.
+- **Two ways to react.** Code that imports the package can `subscribe()` and receive the full `Session` object. Code that would rather not depend on the package at all — a plain custom element, the Astro content island — can listen for `auth:changed` on the bus instead. The session emits both.
+
+We keep it a mock on purpose. Real auth (tokens, refresh, httpOnly cookies) is a large topic that would drown the actual lesson, which is *sharing state across MFEs*. `localStorage` gives us persistence across reloads with zero backend, and swapping in a real provider later doesn't change the shared-singleton shape.
+
+## Pros & cons
+
+**A shared singleton session vs. each remote fetching `/me` itself**
+
+- **Pros:** One source of truth — no drift between remotes, no duplicated fetches, one place to sign in and out. A remote reads the current user synchronously with `getSession()` instead of awaiting its own request.
+- **Cons:** Every remote now shares a runtime dependency and must agree on its version (a singleton mismatch warns or breaks). The session becomes a coordination point — a breaking change to its API ripples to every consumer.
+
+**A `localStorage` mock vs. real cookie/token auth**
+
+- **Pros:** Zero backend, instant persistence across reloads, trivial to reason about while you learn the composition. The API (`getSession/signIn/signOut/subscribe`) is the same shape a real store would expose.
+- **Cons:** It's not secure and not real — `localStorage` is readable by any script and there's no server verifying anything. It's a stand-in for identity, not authentication; production needs a real provider behind the same interface.
+
+## Set it up
+
+### 1. `packages/session/package.json`
+
+Depends on the bus, because it announces `auth:changed`.
+
+```json
+{
+  "name": "@mosaic/session",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@mosaic/bus": "workspace:*"
+  }
+}
+```
+
+### 2. `packages/session/src/index.ts`
+
+A module-level store plus subscribers. Every change persists, notifies local subscribers, **and** emits on the bus.
+
+```ts
+import { bus } from '@mosaic/bus';
+
+export type Session = { userId: string; name: string } | null;
+
+const STORAGE_KEY = 'mosaic:session';
+
+// Module-level state. Because @mosaic/session is a singleton (step 3),
+// this `current` is the ONE session the whole page shares.
+let current: Session = load();
+const subscribers = new Set<(session: Session) => void>();
+
+function load(): Session {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Session) : null;
+  } catch {
+    return null; // SSR or private-mode: fall back to signed-out
+  }
+}
+
+function set(next: Session): void {
+  current = next;
+  if (next) localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  else localStorage.removeItem(STORAGE_KEY);
+
+  // 1) tell in-process subscribers (they get the whole Session)
+  subscribers.forEach((cb) => cb(current));
+  // 2) announce on the bus for anyone who didn't import this package
+  bus.emit('auth:changed', {
+    userId: next?.userId ?? null,
+    name: next?.name ?? null,
+  });
+}
+
+export function getSession(): Session {
+  return current;
+}
+
+export function signIn(name: string): Session {
+  // Mock: any non-empty name signs in. Real auth slots in behind this call.
+  set({ userId: `u_${name.toLowerCase().replace(/\s+/g, '-')}`, name });
+  return current;
+}
+
+export function signOut(): void {
+  set(null);
+}
+
+export function subscribe(cb: (session: Session) => void): () => void {
+  subscribers.add(cb);
+  return () => subscribers.delete(cb);
+}
+```
+
+### 3. Share it as a singleton (`vite.config.ts`)
+
+Add `@mosaic/session` — alongside the bus it depends on — to `shared` in the host **and every remote**, as a singleton:
+
+```ts
+federation({
+  name: 'shell',
+  // ...remotes / exposes...
+  shared: {
+    react: { singleton: true },
+    'react-dom': { singleton: true },
+    '@mosaic/bus': { singleton: true },
+    '@mosaic/session': { singleton: true },
+  },
+});
+```
+
+The Svelte cart lists `'@mosaic/session': { singleton: true }` too, so it reads the very same `current` the shell writes.
+
+## Verify
+
+Type-check the package:
+
+```bash
+pnpm --filter @mosaic/session exec tsc --noEmit
+```
+
+Expected: **no output**.
+
+Then exercise it in the browser. Start the shell (`pnpm --filter shell dev`), open the console:
+
+```js
+const s = await import('@mosaic/session');
+const off = s.subscribe((sess) => console.log('session ->', sess));
+
+s.signIn('Ada');
+// session -> { userId: 'u_ada', name: 'Ada' }
+
+s.getSession();     // { userId: 'u_ada', name: 'Ada' }
+```
+
+Now **reload the page** and run `(await import('@mosaic/session')).getSession()` — it still returns Ada, proving `localStorage` persistence. Then:
+
+```js
+s.signOut();
+// session -> null
+off();
+```
+
+You should also see `auth:changed` fire if you add a `bus.on('auth:changed', console.log)` before signing in — confirming both notification paths work.
+
+Finally, build the workspace:
+
+```bash
+pnpm -r build
+```
+
+Expected: all packages and apps build; no singleton-version warnings in the shell console at runtime.
+
+**Check your understanding:**
+
+1. Why must `@mosaic/session` be a singleton? Describe the exact drift that happens if two remotes each bundle their own copy.
+2. `set()` notifies subscribers *and* emits `auth:changed` on the bus. Who is each path for, and why keep both?
+3. Why is `localStorage` an acceptable mock here but not real authentication? What stays the same when you replace it with a real provider?
+4. `getSession()` returns synchronously while a real `/me` fetch would be async. What does the singleton give you that makes the synchronous read correct?
+
+## Recap
+
+You built `@mosaic/session`: a mock, `localStorage`-backed store with `getSession/signIn/signOut/subscribe`, shared as a Module Federation singleton so the whole page has one identity, and announcing every change on the bus as `auth:changed`. Next, put it to use across frameworks: [Sharing Across MFEs →](/mosaic/en/auth-state/sharing-across-mfes/) has remotes read the session and react to sign-in from the shell.
