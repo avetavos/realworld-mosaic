@@ -1,0 +1,173 @@
+---
+title: Composing SSR
+description: "ขีดจำกัดที่ตรงไปตรงมาของ Module Federation: Astro ไม่ runtime-federate เหมือน SPA integrate มันด้วยการ link ไปหน้าเต็มและ embed web component ที่ Astro build แทน"
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+ทุก remote อื่นใน Mosaic เสียบเข้ากับ shell ด้วยวิธีเดียวกัน: publish `remoteEntry.js` แล้ว host โหลดมันตอน runtime บทนี้เกี่ยวกับ slice ที่วิธีนั้น **ใช้ไม่ได้** — และต้องทำอะไรแทน
+
+Astro ไม่ใช่ single-page app มัน render หน้าบน server (หรือตอน build time) แล้ว ship HTML ไม่ใช่ JavaScript module ที่ shell `import('content/…')` ได้ ดังนั้นเรา integrate content slice สองทางที่ตรงไปตรงมา:
+
+1. **Link ไปที่หน้า Astro เต็ม ๆ** สำหรับ content route ทั้งหน้า (`/about`, `/deals`) — ปล่อยให้ Astro เป็นเจ้าของมันครบวงจร
+2. **Embed web component ที่ Astro build** สำหรับ fragment เล็ก ๆ ที่ใช้ซ้ำได้ (promo banner) ที่ shell mount เหมือน custom element ตัวอื่น ๆ
+
+พอจบคุณจะรู้เป๊ะ ๆ ว่า model ของ Module Federation หยุดตรงไหน และมี `<promo-banner>` ที่ทำงานได้ ซึ่ง Astro build แล้ว render อยู่ใน React shell
+
+## Why
+
+มันน่าทำเป็นแกล้งว่ากลไกเดียวประกอบได้ทุกอย่าง มันไม่ใช่ และการพูดแบบนั้นคือบทเรียน Module Federation ประกอบ **JavaScript module ตอน runtime** — host โหลด `remoteEntry.js` ของ remote แล้ว import module ที่ expose เข้าไปใน runtime ที่ share กัน model นั้นสมมติว่า remote *เป็น* client-side app ที่ยื่นโค้ดให้คุณรัน
+
+Astro ทำลายทั้งสองสมมติฐาน output ของมันคือ **HTML ที่ render บน server** และ JavaScript ต่อหน้าของมันเป็นรายละเอียด implementation ไม่ใช่ module contract ที่มั่นคง ไม่มี `remoteEntry.js` ไม่มี component ที่ expose ให้ `React.lazy` การฝืน Astro เข้า Module Federation แปลว่าโยนสิ่งที่เราเลือกมันมาเพราะเป๊ะ ๆ ทิ้ง — server rendering และหน้า zero-JS — เพื่อทำให้มันดูเหมือน SPA ที่มันไม่ใช่
+
+ดังนั้นเราจับคู่ integration ให้ตรงกับสิ่งที่ Astro ผลิตจริง สำหรับ content ทั้งหน้า หน่วยการประกอบที่ถูกไม่ใช่ module — แต่เป็น **URL**: shell link ไปที่ Astro route แล้วปล่อยให้มัน render ฝั่ง server เร็วและ index ได้ สำหรับ fragment ที่เราอยากได้ *ข้างใน* shell view หน่วยที่ถูกคือ boundary เดียวที่ข้ามทุก framework — **custom element** Astro build JS bundle เล็ก ๆ ที่ define `<promo-banner>` shell โหลด script นั้น แล้วตอนนี้รอยต่อ `<x-app>` เดียวกันจาก [Module 5](/mosaic/th/web-components/) — ตัวที่ [Svelte cart](/mosaic/th/cart/mount-via-web-component/) ขี่อยู่ — ก็พา Astro fragment ไปด้วย transport ต่างกัน (script ธรรมดา ไม่ใช่ federated module) mount contract เดียวกัน
+
+ข้อแม้ที่ตรงไปตรงมานี้ไม่ใช่ความล้มเหลวของ architecture มันคือ architecture ที่บอกความจริงกับคุณ: **ไม่ใช่ทุกอย่างเป็น runtime remote และการแกล้งว่าเป็นแพงกว่าที่มันช่วยประหยัด**
+
+## Pros & cons
+
+**Linking to full Astro pages vs. embedding Astro inside a shell view**
+
+- **Pros:** Astro render ทั้ง route ฝั่ง server — SEO และความเร็วสูงสุด ไม่มีเกม hydration เส้นความเป็นเจ้าของที่สะอาด (ทีม content เป็นเจ้าของ `/about` ครบวงจร) ไม่มีอะไรให้ federate
+- **Cons:** เป็น navigation เต็ม ๆ ไม่ใช่ in-app transition — คุณออกจาก SPA แล้วโหลด document ใหม่ shell chrome ที่ share กัน (nav, cart badge) ต้องถูกทำซ้ำหรือ share ผ่าน design system ไม่ใช่สืบทอดจาก React tree
+
+**Astro-built web components vs. genuine Module Federation remotes**
+
+- **Pros:** ใช้ซ้ำ custom-element boundary ที่เป็นสากล ดังนั้น shell mount Astro fragment ด้วย code path เดียวกับ remote ตัวไหนก็ได้ Astro ยังควบคุมวิธี build bundle นั้น
+- **Cons:** มันเป็นการ include script ธรรมดา ไม่ใช่ federated module ที่มี version — ไม่มี shared-dependency dedupe, ไม่มี `remoteEntry` manifest fragment เป็นใบไม้ ไม่ใช่ app เต็ม คุณจัดการ script URL ด้วยมือ
+
+## Set it up
+
+### 1. `apps/content/src/components/PromoBanner.astro`
+
+Astro component ที่ render markup ของ banner แล้ว define behaviour ของมันเป็น **custom element ของจริง** ใน client `<script>` นี่คือ pattern client-side มาตรฐานของ Astro: server-rendered HTML ที่ห่อด้วย custom tag พร้อม script ที่เรียก `customElements.define` Astro bundle script นั้นให้เรา
+
+```astro
+---
+const { message = 'Free shipping this week' } = Astro.props;
+---
+
+<promo-banner data-message={message}>
+  <p class="promo"></p>
+</promo-banner>
+
+<script>
+  class PromoBanner extends HTMLElement {
+    connectedCallback() {
+      const message = this.dataset.message ?? '';
+      const p = this.querySelector('.promo');
+      if (p) p.textContent = message;
+    }
+  }
+  // Guard against double-definition when the script loads in the shell.
+  if (!customElements.get('promo-banner')) {
+    customElements.define('promo-banner', PromoBanner);
+  }
+</script>
+```
+
+### 2. `apps/content/src/pages/embed/promo.astro`
+
+หน้าเล็ก ๆ ที่มีหน้าที่เดียวคือปล่อย script bundle ของ promo banner ออกมา Astro build `<script>` ด้านบนเป็นไฟล์ JS ที่มี hash ซึ่งหน้านี้อ้างถึง shell จะโหลด script ที่ build แล้วนั้น (สำหรับ production setup คุณจะ pin ชื่อไฟล์ที่มั่นคงหรืออ่านจาก build manifest ของ Astro — สำหรับคอร์สนี้เรา copy asset ที่ build แล้วไปที่ path ที่รู้กัน)
+
+```astro
+---
+import PromoBanner from '../../components/PromoBanner.astro';
+---
+
+<!-- This page exists so Astro compiles and emits the promo-banner bundle. -->
+<PromoBanner message="Free shipping this week" />
+```
+
+### 3. `apps/shell/src/ContentLinks.tsx` — path 1: link to full pages
+
+สำหรับ content route ทั้งหน้า shell แค่ link ออกไปที่ Astro app ใน dev นั่นคือ `localhost:5003` ใน production คือ content origin ที่ deploy แล้ว (ผ่าน env) ทีม content จึง ship `/about` และ `/deals` ได้โดยไม่แตะ shell
+
+```tsx
+const CONTENT_ORIGIN = import.meta.env.VITE_CONTENT_ORIGIN ?? 'http://localhost:5003';
+
+export function ContentLinks() {
+  return (
+    <nav>
+      {/* Full-page content routes, owned and server-rendered by Astro. */}
+      <a href={`${CONTENT_ORIGIN}/content/about`}>About</a>
+      <a href={`${CONTENT_ORIGIN}/content/deals`}>Deals</a>
+    </nav>
+  );
+}
+```
+
+### 4. `apps/shell/src/PromoSlot.tsx` — path 2: embed the web component
+
+สำหรับ fragment shell โหลด script ที่ Astro build แล้วหนึ่งครั้ง จากนั้น render `<promo-banner>` — mount pattern *เดียวกัน* กับ Svelte `<cart-app>` เพียงแต่ส่งผ่าน `<script>` tag ธรรมดาแทน federated module
+
+```tsx
+import { useEffect, useState } from 'react';
+
+const CONTENT_ORIGIN = import.meta.env.VITE_CONTENT_ORIGIN ?? 'http://localhost:5003';
+
+export function PromoSlot() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (customElements.get('promo-banner')) { setReady(true); return; }
+    const s = document.createElement('script');
+    s.type = 'module';
+    // The script Astro built for the promo-banner custom element.
+    s.src = `${CONTENT_ORIGIN}/content/promo-banner.js`;
+    s.onload = () => setReady(true);
+    document.head.appendChild(s);
+  }, []);
+
+  if (!ready) return null;
+
+  // An Astro-built custom element, rendered by the React shell.
+  return <promo-banner data-message="Free shipping this week"></promo-banner>;
+}
+```
+
+`custom-elements.d.ts` เดียวกันจาก [cart lesson](/mosaic/th/cart/mount-via-web-component/) declare `promo-banner` สำหรับ JSX — บรรทัดเดียวข้าง ๆ `cart-app`
+
+## Verify
+
+รัน Astro app กับ shell:
+
+```bash
+pnpm --filter content dev   # 5003
+pnpm --filter shell dev     # 5000
+```
+
+**Path 1 — full pages.** ใน shell คลิก link **About** และ **Deals** ยืนยันว่ามัน navigate ไปที่ Astro origin และ View Source แสดง HTML ที่ server-render มาเต็ม ๆ — Astro เป็นเจ้าของ route พวกนั้น
+
+**Path 2 — embedded web component.** build content slice เพื่อให้ promo bundle มีอยู่ แล้วยืนยันว่ามัน define element:
+
+```bash
+pnpm --filter content build
+# → ✓ Completed in …ms.
+
+# The promo custom element is defined in a built module (grep the emitted JS):
+grep -rl "promo-banner" apps/content/dist/ | head -1
+# → apps/content/dist/…/promo-banner.…js
+```
+
+โหลด shell view ที่ render `<PromoSlot />` แล้วยืนยันใน DevTools ว่า `<promo-banner>` element นั่งอยู่ใน DOM มี message ของมัน — Astro-built component ที่ mount อยู่ใน React โดยไม่มี Module Federation เข้ามาเกี่ยว สุดท้าย build ทั้งคู่:
+
+```bash
+pnpm --filter content build && pnpm --filter shell build
+# → ✓ built   (both)
+```
+
+**ตรวจสอบความเข้าใจ:**
+
+1. ทำไม shell ถึง mount Astro ด้วย `import('content/…')` แบบที่มัน mount catalog และ cart ไม่ได้?
+2. สำหรับ content route ทั้งหน้าอย่าง `/about` "หน่วยการประกอบ" เป็น URL ไม่ใช่ module shell ได้อะไรจากการ link ออกไปแทนการ embed?
+3. `<promo-banner>` fragment กับ `<cart-app>` remote share mount pattern เดียวกัน แต่ต่างกันที่ *transport* ต่างกันยังไง และ cart ได้อะไรที่ promo banner ไม่ได้?
+4. promo script guard ด้วย `if (!customElements.get('promo-banner'))` ทำไม guard นั้นถึงจำเป็นเมื่อ shell inject script?
+
+## Recap
+
+ไม่ใช่ทุกอย่างเป็น runtime remote — และ Mosaic ดีขึ้นเพราะยอมรับมัน Module Federation ประกอบ JavaScript module ส่วน Astro ประกอบ HTML บน server ดังนั้นมันเข้าร่วมร้านสองทางอื่น: shell **link ไปที่หน้า Astro เต็ม ๆ** สำหรับ content route และ **embed web component ที่ Astro build** สำหรับ fragment บน custom-element boundary เดียวกับที่ทุก remote ใช้อยู่แล้ว transport ต่างกัน ขีดจำกัดที่ตรงไปตรงมา รอยต่อเดียวที่สม่ำเสมอ
+
+ตอนนี้สาม framework ถูกประกอบเข้าเป็น storefront เดียว — React, Svelte, และ Astro ที่ยังขาดคือพวกมัน *คุยกัน* ยังไงโดยไม่ import กันเอง ต่อไป: [Cross-MFE Communication →](/mosaic/th/communication/) ที่ event bus แบบ decoupled ต่อสาย "add to cart" จาก catalog ไปที่ cart แล้วขึ้นไปที่ shell badge

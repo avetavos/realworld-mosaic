@@ -1,0 +1,178 @@
+---
+title: The Astro app
+description: "Build the content and marketing slice as an Astro SSR/static app on port 5003 — the fast, SEO-first corner of the store that isn't a SPA."
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+Not every part of a storefront is an interactive app. The marketing pages, the "about", the deals landing page — they're mostly **content**: they need to be fast, indexable by search engines, and cheap to ship. A SPA is the wrong tool for that job. So Mosaic's content slice is an [Astro](https://astro.build/) app — server-rendered or fully static, HTML-first, JavaScript only where it's actually needed.
+
+This lesson builds that app on port **5003**: its config, a couple of real pages, and a shared layout. The next lesson, [Composing SSR →](/mosaic/en/content/composing-ssr/), tackles the harder question — how something that *isn't* a Module Federation remote joins the composition at all.
+
+By the end:
+
+- `apps/content` — an Astro app on port 5003.
+- A layout plus `index`, `about`, and `deals` pages that render as static HTML.
+
+## Why
+
+The other two remotes are SPAs because they're genuinely interactive — you browse and filter the catalog, you add and remove cart items. Marketing content isn't like that. Rendering it as a client-side app would mean shipping a framework runtime to draw text that never changes, and handing search engines a blank page to hydrate. Astro inverts that default: it renders to HTML at build (or request) time and ships **zero JavaScript** unless a component explicitly opts in.
+
+That makes Astro the right tool *and* an honest problem. It's the right tool because content wants HTML, SEO, and speed. It's a problem because Astro is not a single-page app with a `remoteEntry.js` — it can't be a Module Federation remote the way React and Svelte can. We're choosing the correct technology for the content slice knowing it forces a different integration story. Naming that tradeoff out loud, instead of forcing everything through one mechanism, is itself a micro-frontend lesson — and it's the whole subject of the next page.
+
+For now: build the Astro app well on its own terms. Integration comes after.
+
+## Pros & cons
+
+**Astro (HTML-first, SSR/static) vs. a React/Svelte SPA for content**
+
+- **Pros:** Ships little or no JavaScript, so pages are fast and cheap; server-rendered HTML is SEO-friendly out of the box; content authoring in `.astro` and Markdown is simpler than a component tree; can still island-in interactivity where needed.
+- **Cons:** Not a runtime-federatable SPA — it breaks the uniform "load a remoteEntry" model; interactivity requires explicit hydration or web components; a second rendering paradigm for the team to hold.
+
+**Static output vs. on-demand (server) rendering for these pages**
+
+- **Pros of static:** Deploys as plain files to any CDN, nothing to run, effectively free to scale — ideal for marketing pages that rarely change.
+- **Cons of static:** Content only updates on rebuild; anything per-request (a live deals feed, personalisation) needs on-demand rendering (`output: 'server'` with a page-level `prerender` opt-out), which means running a server.
+
+## Set it up
+
+### 1. `apps/content/astro.config.mjs`
+
+Static output by default — the right call for marketing pages. Dev server on **5003** to match the port map. When a page eventually needs per-request data, you switch `output` to `'server'` and mark the static pages with `export const prerender = true`; everything here stays static until then.
+
+```js
+import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  // 'static' prerenders every page to HTML at build time (the default).
+  // Switch to 'server' later if a page needs per-request rendering.
+  output: 'static',
+  server: { port: 5003 },
+  // Served under the store's /content path once deployed.
+  base: '/content',
+});
+```
+
+### 2. `apps/content/src/layouts/Base.astro`
+
+One layout every page shares, so the marketing pages carry the same shell chrome and design tokens as the rest of the store. It pulls in the `@mosaic/design-system` token stylesheet — the same CSS custom properties React and Svelte use — so the content slice looks like it belongs.
+
+```astro
+---
+const { title } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · Mosaic</title>
+    <!-- Shared design tokens: same look as the shell and remotes. -->
+    <link rel="stylesheet" href="/content/tokens.css" />
+  </head>
+  <body>
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>
+```
+
+### 3. `apps/content/src/pages/index.astro`
+
+The marketing home. Pure content — this ships as HTML with no client JavaScript at all.
+
+```astro
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Welcome">
+  <h1>Everything for your desk, composed.</h1>
+  <p>Mugs, notebooks, and the odd mechanical keyboard. Built by four teams,
+     shipped as one store.</p>
+  <a href="/deals">See this week's deals →</a>
+</Base>
+```
+
+### 4. `apps/content/src/pages/deals.astro`
+
+A second page, showing data-driven content. The `deals` array is resolved at build time (static output), so the page is still plain HTML — Astro runs this frontmatter during the build, not in the browser.
+
+```astro
+---
+import Base from '../layouts/Base.astro';
+
+// In a real slice this would come from the content BFF or a CMS.
+const deals = [
+  { name: 'Mosaic Mug', wasCents: 1599, nowCents: 1299 },
+  { name: 'Grid Notebook', wasCents: 1200, nowCents: 900 },
+];
+---
+
+<Base title="Deals">
+  <h1>This week's deals</h1>
+  <ul>
+    {deals.map((d) => (
+      <li>
+        <strong>{d.name}</strong> —
+        <m-price cents={d.nowCents}></m-price>
+        <s><m-price cents={d.wasCents}></m-price></s>
+      </li>
+    ))}
+  </ul>
+</Base>
+```
+
+### 5. `apps/content/src/pages/about.astro`
+
+The last static page, so the slice has real routes to link between.
+
+```astro
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="About">
+  <h1>About Mosaic</h1>
+  <p>Mosaic is one storefront assembled from independently deployed
+     micro-frontends — each team owns a slice, top to bottom.</p>
+</Base>
+```
+
+## Verify
+
+Start the Astro app:
+
+```bash
+pnpm --filter content dev
+# → astro  vX.Y.Z ready in … ms
+# → Local  http://localhost:5003/content
+```
+
+Open `http://localhost:5003/content/` and click through to `/content/deals` and `/content/about` — three real pages, shared layout, design-system prices. Now prove the SSR/static claim: view source (not the inspector) on the home page and confirm the content is present as **HTML in the initial response**, not drawn by client JavaScript.
+
+Then build it and inspect the output — static pages should emit as `.html` files:
+
+```bash
+pnpm --filter content build
+# → ✓ Completed in …ms.
+ls apps/content/dist/content/
+# → index.html  about/index.html  deals/index.html
+```
+
+**Check your understanding:**
+
+1. The catalog and cart are SPAs but the content slice is Astro. What property of marketing content makes Astro the better fit?
+2. `deals.astro` builds a list from a `deals` array. Why does that page still ship as static HTML with no client-side fetch?
+3. What concretely changes if a page needs per-request data, and which config option and page export are involved?
+4. Astro can render `<m-price>` in its HTML. Does that mean Astro is participating in Module Federation? Why or why not?
+
+## Recap
+
+The content slice is a real Astro app: static-by-default, SEO-friendly, sharing the store's design tokens, running on port 5003. It's the right tool for content — and precisely *because* it's not a SPA, it can't plug into the shell the way the catalog and cart do.
+
+That's the honest problem we take on next. [Composing SSR →](/mosaic/en/content/composing-ssr/) explains why Astro doesn't runtime-federate, and shows the two integration paths that actually work: linking to full Astro pages, and embedding Astro-built web components.

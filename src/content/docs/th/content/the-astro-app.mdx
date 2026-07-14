@@ -1,0 +1,178 @@
+---
+title: The Astro app
+description: "สร้าง content และ marketing slice เป็น Astro SSR/static app บน port 5003 — มุมที่เร็วและเน้น SEO ของร้านที่ไม่ใช่ SPA"
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+ไม่ใช่ทุกส่วนของ storefront ที่เป็น interactive app หน้า marketing, หน้า "about", หน้า landing ของ deals — พวกมันส่วนใหญ่เป็น **content**: มันต้องเร็ว, ให้ search engine index ได้, และ ship ถูก SPA คือเครื่องมือที่ผิดสำหรับงานนั้น ดังนั้น content slice ของ Mosaic เป็น [Astro](https://astro.build/) app — server-rendered หรือ static เต็มตัว, HTML-first, มี JavaScript เฉพาะที่จำเป็นจริง ๆ
+
+บทนี้สร้าง app นั้นบน port **5003**: config ของมัน, หน้าจริงสองสามหน้า, และ layout ที่ share กัน บทถัดไป [Composing SSR →](/mosaic/th/content/composing-ssr/) ตอบคำถามที่ยากกว่า — สิ่งที่ *ไม่ใช่* Module Federation remote จะเข้าร่วมการประกอบได้ยังไง
+
+พอจบ:
+
+- `apps/content` — Astro app บน port 5003
+- layout พร้อมหน้า `index`, `about`, และ `deals` ที่ render เป็น static HTML
+
+## Why
+
+อีกสอง remote เป็น SPA เพราะมัน interactive จริง — คุณ browse และ filter catalog, คุณเพิ่มและลบ cart item content ของ marketing ไม่ใช่แบบนั้น การ render มันเป็น client-side app แปลว่าต้อง ship framework runtime เพื่อวาดตัวหนังสือที่ไม่เคยเปลี่ยน และยื่นหน้าเปล่า ๆ ให้ search engine hydrate Astro กลับ default นั้น: มัน render เป็น HTML ตอน build (หรือ request) time แล้ว ship **JavaScript ศูนย์** เว้นแต่ component จะ opt-in อย่างชัดเจน
+
+นั่นทำให้ Astro เป็นทั้งเครื่องมือที่ถูก *และ* ปัญหาที่ตรงไปตรงมา มันถูกเพราะ content ต้องการ HTML, SEO, และความเร็ว มันเป็นปัญหาเพราะ Astro ไม่ใช่ single-page app ที่มี `remoteEntry.js` — มันเป็น Module Federation remote แบบที่ React และ Svelte เป็นไม่ได้ เรากำลังเลือก technology ที่ถูกต้องสำหรับ content slice โดยรู้ว่ามันบังคับ integration story แบบอื่น การพูดชื่อ tradeoff นั้นออกมาดัง ๆ แทนที่จะฝืนยัดทุกอย่างผ่านกลไกเดียว ก็เป็นบทเรียน micro-frontend ในตัวเอง — และเป็นเรื่องทั้งหมดของหน้าถัดไป
+
+ตอนนี้: สร้าง Astro app ให้ดีในเงื่อนไขของมันเอง integration มาทีหลัง
+
+## Pros & cons
+
+**Astro (HTML-first, SSR/static) vs. a React/Svelte SPA for content**
+
+- **Pros:** ship JavaScript น้อยหรือไม่มีเลย หน้าจึงเร็วและถูก server-rendered HTML เป็นมิตรกับ SEO ตั้งแต่แรก การเขียน content ใน `.astro` และ Markdown ง่ายกว่า component tree ยังเกาะ interactivity แบบ island เข้าไปตรงที่จำเป็นได้
+- **Cons:** ไม่ใช่ SPA ที่ runtime-federate ได้ — มันทำลาย model "โหลด remoteEntry" ที่เป็นแบบเดียวกัน interactivity ต้องมี hydration หรือ web component ที่ชัดเจน เป็น paradigm การ render ที่สองที่ทีมต้องแบก
+
+**Static output vs. on-demand (server) rendering for these pages**
+
+- **Pros of static:** deploy เป็นไฟล์ธรรมดาไปที่ CDN ไหนก็ได้ ไม่มีอะไรให้รัน scale ได้แทบฟรี — เหมาะสำหรับหน้า marketing ที่แทบไม่เปลี่ยน
+- **Cons of static:** content update เฉพาะตอน rebuild อะไรที่เป็น per-request (deals feed สด, personalisation) ต้องมี on-demand rendering (`output: 'server'` พร้อม page-level `prerender` opt-out) ซึ่งแปลว่าต้องรัน server
+
+## Set it up
+
+### 1. `apps/content/astro.config.mjs`
+
+static output โดย default — ทางเลือกที่ถูกสำหรับหน้า marketing dev server บน **5003** ให้ตรงกับ port map เมื่อหน้าหนึ่งจำเป็นต้องมี per-request data ในภายหลัง คุณสลับ `output` เป็น `'server'` แล้ว mark หน้า static ด้วย `export const prerender = true` ทุกอย่างตรงนี้ยัง static จนกว่าจะถึงตอนนั้น
+
+```js
+import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  // 'static' prerenders every page to HTML at build time (the default).
+  // Switch to 'server' later if a page needs per-request rendering.
+  output: 'static',
+  server: { port: 5003 },
+  // Served under the store's /content path once deployed.
+  base: '/content',
+});
+```
+
+### 2. `apps/content/src/layouts/Base.astro`
+
+layout เดียวที่ทุกหน้า share เพื่อให้หน้า marketing ใช้ shell chrome และ design token เดียวกับส่วนอื่นของร้าน มันดึง `@mosaic/design-system` token stylesheet เข้ามา — CSS custom property เดียวกับที่ React และ Svelte ใช้ — เพื่อให้ content slice ดูเหมือนอยู่ในที่เดียวกัน
+
+```astro
+---
+const { title } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · Mosaic</title>
+    <!-- Shared design tokens: same look as the shell and remotes. -->
+    <link rel="stylesheet" href="/content/tokens.css" />
+  </head>
+  <body>
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>
+```
+
+### 3. `apps/content/src/pages/index.astro`
+
+หน้า marketing home content ล้วน ๆ — มัน ship เป็น HTML โดยไม่มี client JavaScript เลย
+
+```astro
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Welcome">
+  <h1>Everything for your desk, composed.</h1>
+  <p>Mugs, notebooks, and the odd mechanical keyboard. Built by four teams,
+     shipped as one store.</p>
+  <a href="/deals">See this week's deals →</a>
+</Base>
+```
+
+### 4. `apps/content/src/pages/deals.astro`
+
+หน้าที่สอง แสดง content ที่ขับด้วยข้อมูล array `deals` ถูก resolve ตอน build time (static output) หน้าจึงยังเป็น HTML ธรรมดา — Astro รัน frontmatter นี้ตอน build ไม่ใช่ใน browser
+
+```astro
+---
+import Base from '../layouts/Base.astro';
+
+// In a real slice this would come from the content BFF or a CMS.
+const deals = [
+  { name: 'Mosaic Mug', wasCents: 1599, nowCents: 1299 },
+  { name: 'Grid Notebook', wasCents: 1200, nowCents: 900 },
+];
+---
+
+<Base title="Deals">
+  <h1>This week's deals</h1>
+  <ul>
+    {deals.map((d) => (
+      <li>
+        <strong>{d.name}</strong> —
+        <m-price cents={d.nowCents}></m-price>
+        <s><m-price cents={d.wasCents}></m-price></s>
+      </li>
+    ))}
+  </ul>
+</Base>
+```
+
+### 5. `apps/content/src/pages/about.astro`
+
+หน้า static สุดท้าย เพื่อให้ slice มี route จริงให้ link ถึงกัน
+
+```astro
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="About">
+  <h1>About Mosaic</h1>
+  <p>Mosaic is one storefront assembled from independently deployed
+     micro-frontends — each team owns a slice, top to bottom.</p>
+</Base>
+```
+
+## Verify
+
+เริ่ม Astro app:
+
+```bash
+pnpm --filter content dev
+# → astro  vX.Y.Z ready in … ms
+# → Local  http://localhost:5003/content
+```
+
+เปิด `http://localhost:5003/content/` แล้วคลิกไปที่ `/content/deals` และ `/content/about` — สามหน้าจริง, layout ที่ share กัน, ราคาจาก design-system ตอนนี้พิสูจน์คำอ้าง SSR/static: view source (ไม่ใช่ inspector) บนหน้า home แล้วยืนยันว่า content อยู่เป็น **HTML ใน response แรก** ไม่ใช่ถูกวาดด้วย client JavaScript
+
+จากนั้น build มันแล้วตรวจ output — หน้า static ควรออกมาเป็นไฟล์ `.html`:
+
+```bash
+pnpm --filter content build
+# → ✓ Completed in …ms.
+ls apps/content/dist/content/
+# → index.html  about/index.html  deals/index.html
+```
+
+**ตรวจสอบความเข้าใจ:**
+
+1. catalog กับ cart เป็น SPA แต่ content slice เป็น Astro คุณสมบัติอะไรของ content ของ marketing ที่ทำให้ Astro เหมาะกว่า?
+2. `deals.astro` สร้าง list จาก array `deals` ทำไมหน้านั้นยัง ship เป็น static HTML โดยไม่มี client-side fetch?
+3. อะไรเปลี่ยนอย่างเป็นรูปธรรมถ้าหน้าหนึ่งจำเป็นต้องมี per-request data และ config option กับ page export ตัวไหนที่เกี่ยวข้อง?
+4. Astro render `<m-price>` ใน HTML ของมันได้ นั่นแปลว่า Astro เข้าร่วม Module Federation ไหม เพราะอะไร?
+
+## Recap
+
+content slice เป็น Astro app ของจริง: static-by-default, เป็นมิตรกับ SEO, share design token ของร้าน, รันบน port 5003 มันคือเครื่องมือที่ถูกสำหรับ content — และเพราะมันไม่ใช่ SPA *เป๊ะ ๆ* นี่แหละ มันจึงเสียบเข้ากับ shell แบบที่ catalog และ cart ทำไม่ได้
+
+นั่นคือปัญหาที่ตรงไปตรงมาที่เรารับมาต่อ [Composing SSR →](/mosaic/th/content/composing-ssr/) อธิบายว่าทำไม Astro ถึงไม่ runtime-federate และแสดง integration path สองทางที่ใช้ได้จริง: link ไปที่หน้า Astro เต็ม ๆ และ embed web component ที่ Astro build

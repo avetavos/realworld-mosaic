@@ -1,0 +1,173 @@
+---
+title: Composing SSR
+description: "The honest limit of Module Federation: Astro doesn't runtime-federate like a SPA. Integrate it by linking to full pages and embedding Astro-built web components instead."
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+Every other remote in Mosaic plugs into the shell the same way: publish a `remoteEntry.js`, and the host loads it at runtime. This lesson is about the slice where that **doesn't work** — and what to do instead.
+
+Astro is not a single-page app. It renders pages on the server (or at build time) and ships HTML, not a JavaScript module the shell can `import('content/…')`. So we integrate the content slice two honest ways:
+
+1. **Link to full Astro pages** for whole content routes (`/about`, `/deals`) — let Astro own them end to end.
+2. **Embed Astro-built web components** for small reusable fragments (a promo banner) the shell mounts like any other custom element.
+
+By the end you'll know exactly where the Module Federation model stops, and have a working `<promo-banner>` built by Astro and rendered inside the React shell.
+
+## Why
+
+It's tempting to pretend one mechanism composes everything. It doesn't, and saying so is the lesson. Module Federation composes **JavaScript modules at runtime** — a host loads a remote's `remoteEntry.js` and imports exposed modules into a shared runtime. That model assumes the remote *is* a client-side app that hands you code to run.
+
+Astro breaks both assumptions. Its output is **HTML rendered on the server**, and its per-page JavaScript is an implementation detail, not a stable module contract. There's no `remoteEntry.js`, no exposed component to `React.lazy`. Forcing Astro into Module Federation would mean throwing away the exact thing we chose it for — server rendering and zero-JS pages — to make it look like a SPA it isn't.
+
+So we match the integration to what Astro actually produces. For a whole page of content, the right unit of composition isn't a module — it's a **URL**: the shell links to the Astro route and lets it render server-side, fast and indexable. For a fragment we want *inside* a shell view, the right unit is the one boundary that crosses every framework — a **custom element**. Astro can build a small JS bundle that defines `<promo-banner>`, the shell loads that script, and now the same `<x-app>` seam from [Module 5](/mosaic/en/web-components/) — the one the [Svelte cart](/mosaic/en/cart/mount-via-web-component/) rides — carries the Astro fragment too. Different transport (a plain script, not a federated module), same mount contract.
+
+The honest caveat isn't a failure of the architecture. It's the architecture telling you the truth: **not everything is a runtime remote, and pretending otherwise costs more than it saves.**
+
+## Pros & cons
+
+**Linking to full Astro pages vs. embedding Astro inside a shell view**
+
+- **Pros:** Astro renders the whole route server-side — maximum SEO and speed, no hydration games; a clean ownership line (the content team owns `/about` top to bottom); nothing to federate.
+- **Cons:** A full navigation, not an in-app transition — you leave the SPA and load a new document; shared shell chrome (nav, cart badge) must be reproduced or shared via the design system, not inherited from the React tree.
+
+**Astro-built web components vs. genuine Module Federation remotes**
+
+- **Pros:** Reuses the universal custom-element boundary, so the shell mounts an Astro fragment with the same code path as any remote; Astro still controls how that bundle is built.
+- **Cons:** It's a plain script include, not a versioned federated module — no shared-dependency dedupe, no `remoteEntry` manifest; the fragment is a leaf, not a full app; you hand-manage the script URL.
+
+## Set it up
+
+### 1. `apps/content/src/components/PromoBanner.astro`
+
+An Astro component that renders the banner markup and defines its behaviour as a **real custom element** in a client `<script>`. This is the standard Astro client-side pattern: server-rendered HTML wrapped in a custom tag, with a script that calls `customElements.define`. Astro bundles that script for us.
+
+```astro
+---
+const { message = 'Free shipping this week' } = Astro.props;
+---
+
+<promo-banner data-message={message}>
+  <p class="promo"></p>
+</promo-banner>
+
+<script>
+  class PromoBanner extends HTMLElement {
+    connectedCallback() {
+      const message = this.dataset.message ?? '';
+      const p = this.querySelector('.promo');
+      if (p) p.textContent = message;
+    }
+  }
+  // Guard against double-definition when the script loads in the shell.
+  if (!customElements.get('promo-banner')) {
+    customElements.define('promo-banner', PromoBanner);
+  }
+</script>
+```
+
+### 2. `apps/content/src/pages/embed/promo.astro`
+
+A minimal page whose only job is to emit the promo banner's script bundle. Astro builds the `<script>` above into a hashed JS file referenced by this page; the shell will load that built script. (For a production setup you'd pin a stable filename or read it from Astro's build manifest — for the course we copy the built asset to a known path.)
+
+```astro
+---
+import PromoBanner from '../../components/PromoBanner.astro';
+---
+
+<!-- This page exists so Astro compiles and emits the promo-banner bundle. -->
+<PromoBanner message="Free shipping this week" />
+```
+
+### 3. `apps/shell/src/ContentLinks.tsx` — path 1: link to full pages
+
+For whole content routes, the shell just links out to the Astro app. In dev that's `localhost:5003`; in production it's the deployed content origin (via env), so the content team ships `/about` and `/deals` without touching the shell.
+
+```tsx
+const CONTENT_ORIGIN = import.meta.env.VITE_CONTENT_ORIGIN ?? 'http://localhost:5003';
+
+export function ContentLinks() {
+  return (
+    <nav>
+      {/* Full-page content routes, owned and server-rendered by Astro. */}
+      <a href={`${CONTENT_ORIGIN}/content/about`}>About</a>
+      <a href={`${CONTENT_ORIGIN}/content/deals`}>Deals</a>
+    </nav>
+  );
+}
+```
+
+### 4. `apps/shell/src/PromoSlot.tsx` — path 2: embed the web component
+
+For the fragment, the shell loads Astro's built script once, then renders `<promo-banner>` — the *same* mount pattern as the Svelte `<cart-app>`, just delivered by a plain `<script>` tag instead of a federated module.
+
+```tsx
+import { useEffect, useState } from 'react';
+
+const CONTENT_ORIGIN = import.meta.env.VITE_CONTENT_ORIGIN ?? 'http://localhost:5003';
+
+export function PromoSlot() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (customElements.get('promo-banner')) { setReady(true); return; }
+    const s = document.createElement('script');
+    s.type = 'module';
+    // The script Astro built for the promo-banner custom element.
+    s.src = `${CONTENT_ORIGIN}/content/promo-banner.js`;
+    s.onload = () => setReady(true);
+    document.head.appendChild(s);
+  }, []);
+
+  if (!ready) return null;
+
+  // An Astro-built custom element, rendered by the React shell.
+  return <promo-banner data-message="Free shipping this week"></promo-banner>;
+}
+```
+
+The same `custom-elements.d.ts` from the [cart lesson](/mosaic/en/cart/mount-via-web-component/) declares `promo-banner` for JSX — one line beside `cart-app`.
+
+## Verify
+
+Run the Astro app and the shell:
+
+```bash
+pnpm --filter content dev   # 5003
+pnpm --filter shell dev     # 5000
+```
+
+**Path 1 — full pages.** In the shell, click the **About** and **Deals** links. Confirm they navigate to the Astro origin and that View Source shows fully server-rendered HTML — Astro owns those routes.
+
+**Path 2 — embedded web component.** Build the content slice so the promo bundle exists, and confirm it defines the element:
+
+```bash
+pnpm --filter content build
+# → ✓ Completed in …ms.
+
+# The promo custom element is defined in a built module (grep the emitted JS):
+grep -rl "promo-banner" apps/content/dist/ | head -1
+# → apps/content/dist/…/promo-banner.…js
+```
+
+Load the shell view that renders `<PromoSlot />` and confirm in DevTools that a `<promo-banner>` element sits in the DOM, populated with its message — an Astro-built component mounted inside React, with no Module Federation involved. Finally, build both:
+
+```bash
+pnpm --filter content build && pnpm --filter shell build
+# → ✓ built   (both)
+```
+
+**Check your understanding:**
+
+1. Why can't the shell mount Astro with `import('content/…')` the way it mounts the catalog and cart?
+2. For a full content route like `/about`, the "unit of composition" is a URL rather than a module. What does the shell gain by linking out instead of embedding?
+3. The `<promo-banner>` fragment and the `<cart-app>` remote share the same mount pattern but differ in *transport*. What's the difference, and what does the cart get that the promo banner doesn't?
+4. The promo script guards with `if (!customElements.get('promo-banner'))`. Why is that guard necessary when the shell injects the script?
+
+## Recap
+
+Not everything is a runtime remote — and Mosaic is better for admitting it. Module Federation composes JavaScript modules; Astro composes HTML on the server, so it joins the store two other ways: the shell **links to full Astro pages** for content routes, and **embeds Astro-built web components** for fragments over the same custom-element boundary every remote already uses. Different transport, honest limits, one consistent seam.
+
+Three frameworks are now composed into one storefront — React, Svelte, and Astro. What's still missing is how they *talk* without importing each other. Next: [Cross-MFE Communication →](/mosaic/en/communication/), where a decoupled event bus wires "add to cart" from the catalog to the cart and up to the shell badge.
