@@ -1,0 +1,175 @@
+---
+title: Expose & consume
+description: "Build a minimal remote that exposes a module, consume it from the host at runtime, and understand what remoteEntry.js actually is."
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+The other half of the contract. In the [shell module](/mosaic/en/shell/host-config/) we configured the host to *consume* a remote. Here we build a **remote** — the smallest one possible — that *exposes* a component, and we watch the running host load it over the network. To keep the focus on federation itself (not on catalog specifics), we expose a trivial `./Widget` from the catalog app on **port 5001**, then see it render inside the shell.
+
+By the end you'll have seen a full round-trip: the host asks for `catalog/Widget`, the federation runtime fetches `http://localhost:5001/remoteEntry.js`, and a component built by a *different* app renders in the shell's DOM.
+
+## Why
+
+A remote's job is to publish some of its modules for other apps to import at runtime. The `exposes` map is that publication: it maps a public name (`./Widget`) to a source file (`./src/Widget.tsx`). The federation plugin compiles the app and emits a **`remoteEntry.js`** — a small manifest-plus-loader that lists what the remote exposes and knows how to fetch the underlying chunks on demand.
+
+That's the key mental model: **`remoteEntry.js` is the remote's public interface.** The host never imports the remote's source; it imports `remoteEntry.js`, which is a stable URL. The remote team can rebuild and change its internals freely — as long as `./Widget` still exists and still means the same thing, the host keeps working. The entry file is the contract; everything behind it is the remote's private business. This is exactly what makes independent deployment safe.
+
+## Pros & cons
+
+**Exposing named modules (`exposes`) vs. shipping a whole app**
+
+- **Pros:** The remote publishes a precise, small surface — just the components meant to be embedded. Internals stay private and refactorable; the exposed names are a deliberate API.
+- **Cons:** Someone has to *design* that surface and keep it stable — a changed or removed exposed name breaks every host consuming it. Exposed modules are an API contract, with all the versioning discipline that implies.
+
+**Consuming via `remoteEntry.js` at runtime vs. publishing the remote to npm**
+
+- **Pros:** The host loads the *currently deployed* remote by URL — deploy the remote and every host gets the new version on next load, no host rebuild, no dependency bump, no republish.
+- **Cons:** The remote is now a live network dependency with runtime coupling; you trade npm's version pinning for a URL that must stay available and compatible. Resolving that tension is [resilience](/mosaic/en/resilience/) and [versioning](/mosaic/en/deployment/) work later.
+
+## Set it up
+
+### 1. `apps/catalog/package.json`
+
+The catalog is a React remote on port 5001. Same React + Vite base as the shell, plus the federation plugin.
+
+```json
+{
+  "name": "catalog",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5001 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --port 5001 --strictPort",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "@module-federation/vite": "^1.7.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0"
+  }
+}
+```
+
+### 2. `apps/catalog/vite.config.ts`
+
+The remote's federation config mirrors the host, but with `exposes` instead of `remotes`. No `remotes` map — this app only publishes. `server.origin` and `build.target: 'esnext'` are required here too, so the emitted `remoteEntry.js` generates correct absolute URLs.
+
+```ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { federation } from '@module-federation/vite';
+
+export default defineConfig({
+  plugins: [
+    react(),
+    federation({
+      name: 'catalog',
+      filename: 'remoteEntry.js',
+      exposes: {
+        './Widget': './src/Widget.tsx',
+      },
+      shared: ['react', 'react-dom'],
+    }),
+  ],
+  server: {
+    port: 5001,
+    origin: 'http://localhost:5001',
+  },
+  build: {
+    target: 'esnext',
+  },
+});
+```
+
+`name: 'catalog'` must match the key the host used in its `remotes` map, and `filename: 'remoteEntry.js'` must match the entry URL the host points at. The names *are* the wiring.
+
+### 3. `apps/catalog/src/Widget.tsx`
+
+The exposed component. It's a normal React component — nothing about it knows it's federated. That's the point: a remote's exposed modules are ordinary code; federation is a packaging concern, not a coding one.
+
+```tsx
+export default function Widget() {
+  return (
+    <section className="widget">
+      <h2>Hello from the catalog remote</h2>
+      <p>
+        This component was built and served by the catalog app on port 5001,
+        then loaded into the shell at runtime.
+      </p>
+    </section>
+  );
+}
+```
+
+### 4. Point the host at `./Widget` (temporary)
+
+The host is already configured for the `catalog` remote. To consume *this* exposed module, import `catalog/Widget` in the shell's `App.tsx` for now (in [Module 4](/mosaic/en/catalog/) it becomes the real `catalog/Catalog`):
+
+```tsx
+const Widget = lazy(() => import('catalog/Widget'));
+// …
+<Suspense fallback={<p>Loading…</p>}>
+  <Widget />
+</Suspense>
+```
+
+Add the matching declaration in the shell's `remotes.d.ts`:
+
+```ts
+declare module 'catalog/Widget' {
+  import type { ComponentType } from 'react';
+  const Widget: ComponentType;
+  export default Widget;
+}
+```
+
+## Verify
+
+Start the remote and the host together (from the repo root, or two terminals):
+
+```bash
+pnpm --filter catalog dev     # remote on 5001
+pnpm --filter shell dev       # host on 5000
+```
+
+First, confirm the remote actually publishes an entry file — fetch it directly:
+
+```bash
+curl -sI http://localhost:5001/remoteEntry.js
+```
+
+Expected: an HTTP `200` with a JavaScript content type. That URL *is* the remote's public interface.
+
+Now open `http://localhost:5000/`. Expected: the shell's header, and inside the main slot, **"Hello from the catalog remote."** In the browser DevTools **Network** panel you'll see the shell fetch `remoteEntry.js` from `localhost:5001`, then the chunk for `Widget` — a component from a different app, rendered in the shell's DOM.
+
+Finally, the build check:
+
+```bash
+pnpm --filter catalog build
+```
+
+Expected: a clean build with `dist/remoteEntry.js` emitted. A running round-trip *and* a clean build means expose/consume works end to end.
+
+**Check your understanding:**
+
+1. In one sentence, what *is* `remoteEntry.js`, and why is it the thing the host imports rather than the remote's source?
+2. The remote's config has `exposes` but no `remotes`; the host's config has `remotes` but no `exposes`. Why the asymmetry?
+3. `Widget.tsx` is an ordinary React component with nothing federation-specific in it. What does that tell you about where the federation boundary actually lives?
+4. Two names must match between the host and remote configs for the wiring to work. Which two, and what breaks if either differs?
+
+## Recap
+
+You built a minimal remote that exposes `./Widget`, and watched the host load it at runtime over the network. The remote emits a `remoteEntry.js` — its stable public interface — and the host imports through that, never touching the remote's source. That indirection is the whole trick behind independent deployment.
+
+One thing we glossed over: the host and remote both list `shared: ['react', 'react-dom']`. If each shipped its own React, hooks would break across the boundary. Let's look at why — and how sharing fixes it.
+
+Next → [Shared singletons →](/mosaic/en/federation/shared-singletons/)

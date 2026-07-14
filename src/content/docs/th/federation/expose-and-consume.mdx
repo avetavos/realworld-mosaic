@@ -1,0 +1,175 @@
+---
+title: Expose & consume
+description: "สร้าง remote จิ๋ว ๆ ที่ expose module, consume มันจาก host ตอน runtime และเข้าใจว่า remoteEntry.js จริง ๆ คืออะไร"
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+อีกครึ่งหนึ่งของ contract ใน[บท shell](/mosaic/th/shell/host-config/) เรา config host ให้ *consume* remote ตรงนี้เราสร้าง **remote** — ตัวเล็กที่สุดเท่าที่จะเป็นไปได้ — ที่ *expose* component แล้วดู host ที่รันอยู่โหลดมันผ่าน network เพื่อโฟกัสที่ federation เอง (ไม่ใช่รายละเอียดของ catalog) เรา expose `./Widget` จิ๋ว ๆ จาก catalog app บน **port 5001** แล้วดูมัน render ข้างใน shell
+
+พอจบคุณจะเห็นการวิ่งไป-กลับครบรอบ: host ขอ `catalog/Widget`, federation runtime fetch `http://localhost:5001/remoteEntry.js` แล้ว component ที่ build โดย app *คนละตัว* render อยู่ใน DOM ของ shell
+
+## Why
+
+หน้าที่ของ remote คือ publish บาง module ของมันให้ app อื่น import ตอน runtime map `exposes` คือการ publish นั้น: มัน map ชื่อสาธารณะ (`./Widget`) ไปยัง source file (`./src/Widget.tsx`) federation plugin compile app แล้วปล่อย **`remoteEntry.js`** — manifest-บวก-loader เล็ก ๆ ที่ list ว่า remote expose อะไรบ้าง และรู้วิธี fetch chunk เบื้องหลังตามที่ต้องการ
+
+นั่นคือ mental model สำคัญ: **`remoteEntry.js` คือ public interface ของ remote** host ไม่เคย import source ของ remote; มัน import `remoteEntry.js` ซึ่งเป็น URL ที่เสถียร ทีม remote rebuild และเปลี่ยน internal ได้อิสระ — ตราบใดที่ `./Widget` ยังอยู่และยังหมายถึงสิ่งเดิม host ก็ทำงานต่อได้ entry file คือ contract; ทุกอย่างเบื้องหลังมันคือเรื่องส่วนตัวของ remote นี่แหละคือสิ่งที่ทำให้ independent deployment ปลอดภัย
+
+## Pros & cons
+
+**Exposing named modules (`exposes`) vs. shipping a whole app**
+
+- **Pros:** remote publish surface ที่แม่นยำและเล็ก — แค่ component ที่ตั้งใจให้ฝังได้ internal ยังคงเป็นส่วนตัวและ refactor ได้; ชื่อที่ expose คือ API ที่ตั้งใจออกแบบ
+- **Cons:** ต้องมีคน *ออกแบบ* surface นั้นและรักษาให้มันเสถียร — expose ชื่อที่เปลี่ยนหรือลบพัง host ทุกตัวที่ consume มัน module ที่ expose คือ API contract พร้อมวินัยเรื่อง versioning ทั้งหมดที่ตามมา
+
+**Consuming via `remoteEntry.js` at runtime vs. publishing the remote to npm**
+
+- **Pros:** host โหลด remote *ที่ deploy อยู่ตอนนี้* ด้วย URL — deploy remote แล้วทุก host ได้ version ใหม่ตอนโหลดครั้งถัดไป ไม่ต้อง rebuild host, ไม่ต้อง bump dependency, ไม่ต้อง republish
+- **Cons:** ตอนนี้ remote เป็น network dependency ที่ live พร้อม runtime coupling; คุณแลก version pinning ของ npm กับ URL ที่ต้อง available และเข้ากันได้อยู่เสมอ การคลายความตึงนั้นเป็นงานของ [resilience](/mosaic/th/resilience/) และ [versioning](/mosaic/th/deployment/) ทีหลัง
+
+## Set it up
+
+### 1. `apps/catalog/package.json`
+
+catalog เป็น React remote บน port 5001 base React + Vite เดียวกับ shell บวก federation plugin
+
+```json
+{
+  "name": "catalog",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5001 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --port 5001 --strictPort",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "@module-federation/vite": "^1.7.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0"
+  }
+}
+```
+
+### 2. `apps/catalog/vite.config.ts`
+
+federation config ของ remote สะท้อน host แต่มี `exposes` แทน `remotes` ไม่มี map `remotes` — app นี้แค่ publish `server.origin` และ `build.target: 'esnext'` จำเป็นตรงนี้ด้วย เพื่อให้ `remoteEntry.js` ที่ปล่อยออกมาสร้าง absolute URL ถูกต้อง
+
+```ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { federation } from '@module-federation/vite';
+
+export default defineConfig({
+  plugins: [
+    react(),
+    federation({
+      name: 'catalog',
+      filename: 'remoteEntry.js',
+      exposes: {
+        './Widget': './src/Widget.tsx',
+      },
+      shared: ['react', 'react-dom'],
+    }),
+  ],
+  server: {
+    port: 5001,
+    origin: 'http://localhost:5001',
+  },
+  build: {
+    target: 'esnext',
+  },
+});
+```
+
+`name: 'catalog'` ต้องตรงกับ key ที่ host ใช้ใน map `remotes` ของมัน และ `filename: 'remoteEntry.js'` ต้องตรงกับ entry URL ที่ host ชี้ไป ชื่อพวกนี้ *คือ* การต่อสาย
+
+### 3. `apps/catalog/src/Widget.tsx`
+
+component ที่ expose มันคือ React component ธรรมดา — ไม่มีอะไรในตัวมันรู้ว่ามันถูก federate นั่นคือประเด็น: module ที่ remote expose คือโค้ดธรรมดา; federation คือเรื่องของ packaging ไม่ใช่เรื่องของการเขียนโค้ด
+
+```tsx
+export default function Widget() {
+  return (
+    <section className="widget">
+      <h2>Hello from the catalog remote</h2>
+      <p>
+        This component was built and served by the catalog app on port 5001,
+        then loaded into the shell at runtime.
+      </p>
+    </section>
+  );
+}
+```
+
+### 4. Point the host at `./Widget` (temporary)
+
+host ถูก config สำหรับ remote `catalog` ไว้แล้ว เพื่อ consume module *ตัวนี้* ที่ expose ไว้ ให้ import `catalog/Widget` ใน `App.tsx` ของ shell ไปก่อน (ใน [Module 4](/mosaic/th/catalog/) มันจะกลายเป็น `catalog/Catalog` จริง):
+
+```tsx
+const Widget = lazy(() => import('catalog/Widget'));
+// …
+<Suspense fallback={<p>Loading…</p>}>
+  <Widget />
+</Suspense>
+```
+
+เพิ่ม declaration ที่ตรงกันใน `remotes.d.ts` ของ shell:
+
+```ts
+declare module 'catalog/Widget' {
+  import type { ComponentType } from 'react';
+  const Widget: ComponentType;
+  export default Widget;
+}
+```
+
+## Verify
+
+เริ่ม remote และ host พร้อมกัน (จาก root ของ repo หรือสอง terminal):
+
+```bash
+pnpm --filter catalog dev     # remote on 5001
+pnpm --filter shell dev       # host on 5000
+```
+
+ก่อนอื่น ยืนยันว่า remote publish entry file จริง — fetch มันตรง ๆ:
+
+```bash
+curl -sI http://localhost:5001/remoteEntry.js
+```
+
+คาดหวัง: HTTP `200` พร้อม content type แบบ JavaScript URL นั้น *คือ* public interface ของ remote
+
+ทีนี้เปิด `http://localhost:5000/` คาดหวัง: header ของ shell และข้างใน main slot คือ **"Hello from the catalog remote"** ใน panel **Network** ของ browser DevTools คุณจะเห็น shell fetch `remoteEntry.js` จาก `localhost:5001` แล้วตามด้วย chunk ของ `Widget` — component จาก app คนละตัว render อยู่ใน DOM ของ shell
+
+สุดท้าย build check:
+
+```bash
+pnpm --filter catalog build
+```
+
+คาดหวัง: build สะอาดโดยปล่อย `dist/remoteEntry.js` การวิ่งไป-กลับที่ทำงาน *และ* build ที่สะอาดแปลว่า expose/consume ทำงานครบตั้งแต่ต้นจนจบ
+
+**Check your understanding:**
+
+1. ในหนึ่งประโยค `remoteEntry.js` *คือ* อะไร และทำไมมันถึงเป็นสิ่งที่ host import แทนที่จะ import source ของ remote?
+2. config ของ remote มี `exposes` แต่ไม่มี `remotes`; config ของ host มี `remotes` แต่ไม่มี `exposes` ทำไมถึงไม่สมมาตร?
+3. `Widget.tsx` เป็น React component ธรรมดาที่ไม่มีอะไรเฉพาะ federation ในตัวมัน นั่นบอกอะไรคุณเกี่ยวกับว่า federation boundary อยู่ตรงไหนจริง ๆ?
+4. มีสองชื่อที่ต้องตรงกันระหว่าง config ของ host และ remote เพื่อให้ต่อสายได้ ชื่อไหนสองอัน และอะไรพังถ้าตัวใดตัวหนึ่งต่างกัน?
+
+## Recap
+
+คุณสร้าง remote จิ๋ว ๆ ที่ expose `./Widget` แล้วดู host โหลดมันตอน runtime ผ่าน network remote ปล่อย `remoteEntry.js` — public interface ที่เสถียรของมัน — และ host import ผ่านมัน โดยไม่เคยแตะ source ของ remote การ indirect นั้นคือกลทั้งหมดเบื้องหลัง independent deployment
+
+มีสิ่งหนึ่งที่เราข้ามไป: host และ remote ต่างก็ list `shared: ['react', 'react-dom']` ถ้าแต่ละตัวส่ง React ของตัวเอง hook จะพังข้าม boundary มาดูกันว่าทำไม — และการแชร์แก้มันอย่างไร
+
+Next → [Shared singletons →](/mosaic/th/federation/shared-singletons/)

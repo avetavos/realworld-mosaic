@@ -1,0 +1,120 @@
+---
+title: Shared singletons
+description: "Why React must load once across host and remotes — shared dependencies, singletons, and the shareScope that makes it work."
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+No new app this lesson — instead we make the `shared` config we've been copying into every `vite.config.ts` *understood*, and prove it. We'll see what breaks when a remote ships its own React, why `shared: ['react', 'react-dom']` fixes it, what `shareScope: 'default'` and the `singleton` semantics mean, and how the federation runtime negotiates *one* React instance across the host and every React remote.
+
+This is the last piece of the Module Federation foundation. After this, every remote you build inherits a correctly-shared React without you thinking about it.
+
+## Why
+
+Two React apps loaded into one page, each with its own copy of React, is a classic and confusing failure. Hooks throw "invalid hook call"; context set in the host is invisible to the remote; `React.lazy` and `<Suspense>` misbehave. The reason is that React keeps internal state (the hooks dispatcher, the current context) in *module-level* variables. Two copies of the module means two sets of that state — and a component rendered by the host's React but running against the remote's React sees the wrong one.
+
+`shared` solves it by making a dependency a **negotiated, shared instance** instead of a bundled-in copy. When the host and a remote both declare `react` as shared in the same **shareScope** (`'default'`), the federation runtime looks at the versions on offer, picks one compatible instance, and hands it to *both*. React is loaded once and reused. As a **singleton**, the runtime enforces that only one copy is ever active — if two incompatible versions collide, you get a clear warning instead of silent, baffling breakage.
+
+The Svelte cart remote, by contrast, shares *nothing* React — it isn't a React app. It mounts through a Web Component boundary instead, which is exactly why it doesn't need to participate in React's shared scope. Sharing is for genuinely-shared runtimes, not for everything.
+
+## Pros & cons
+
+**Sharing React as a singleton vs. each remote bundling its own copy**
+
+- **Pros:** One React instance means hooks, context, and Suspense work seamlessly across the boundary; the byte cost of React is paid once, not once per remote; the user downloads less.
+- **Cons:** The host and remotes must stay on compatible React versions — a shared singleton couples them on that one dependency. An incompatible major version has to be coordinated, not shipped unilaterally. It's a real constraint, and an honest one: some things genuinely must agree.
+
+**`singleton: true` semantics vs. allowing multiple versions**
+
+- **Pros:** For stateful runtimes like React, one active instance is *required* for correctness — the singleton guarantee is what makes cross-boundary rendering work at all, and version conflicts surface loudly.
+- **Cons:** Less flexibility: a remote can't quietly run a different React major from the host. For stateless libraries (a date formatter, say) multiple versions would be harmless and singleton would be unnecessarily strict — so you share those without it.
+
+## Set it up
+
+### 1. The shared config, in full
+
+We've been writing the short form `shared: ['react', 'react-dom']`. That's sugar for the explicit object form, which is worth seeing because it names what's happening. Host **and** every React remote must agree:
+
+```ts
+federation({
+  name: 'shell', // or 'catalog', etc.
+  // …remotes or exposes…
+  shared: {
+    react: {
+      singleton: true,
+      requiredVersion: '^18.3.0',
+    },
+    'react-dom': {
+      singleton: true,
+      requiredVersion: '^18.3.0',
+    },
+  },
+})
+```
+
+`singleton: true` says "there must be exactly one active instance of this across the whole shared scope." `requiredVersion` is what the runtime checks compatibility against when it negotiates. The array shorthand infers these from each app's `package.json`, which is why keeping React versions aligned across the workspace (Module 1's single root-pinned toolchain mindset) matters.
+
+### 2. Same shareScope everywhere
+
+Every host-remote pair in Mosaic uses `shareScope: 'default'` (in the host's `remotes` entries) so all apps negotiate in *one* scope. If the catalog shared React in scope `'default'` but the host looked in a different scope, they'd never find each other's instance and both would load their own — reintroducing the exact bug sharing exists to prevent. One scope, one negotiation, one React.
+
+### 3. Nothing to share for the Svelte remote
+
+For contrast, the cart remote's config (built in [Module 6](/mosaic/en/cart/)) exposes a custom-element registrar and shares no React:
+
+```ts
+federation({
+  name: 'cart',
+  filename: 'remoteEntry.js',
+  exposes: { './register': './src/register.ts' },
+  // no `shared: ['react', ...]` — it's a Svelte app behind a Web Component
+})
+```
+
+It doesn't participate in React's singleton because it doesn't use React. The Web Component boundary is what lets a non-React remote live in a React host without sharing a framework at all.
+
+## Verify
+
+The clearest verification is to *see* the singleton at work in the running app from the previous lesson (shell on 5000, catalog on 5001).
+
+Open `http://localhost:5000/` with the catalog rendering, then in the browser console check that only one React is present:
+
+```js
+// In DevTools console, with the app loaded:
+window.__mfShared = window.__mfShared; // federation runtime tracks shared modules
+```
+
+More concretely, look at the **Network** panel: with `shared` working, you see React's chunk fetched **once**, then reused when the catalog loads — not a second React chunk for the remote.
+
+Now prove the negative. Temporarily remove `'react'` from the catalog's `shared` array, rebuild, and reload:
+
+```bash
+pnpm --filter catalog build && pnpm --filter catalog dev
+```
+
+Expected: the catalog now bundles its *own* React, and the console throws an **"Invalid hook call"** / "hooks can only be called inside a component" error when `Widget` renders — two Reacts, exactly as predicted. Restore the `shared` line and the error disappears. Seeing the bug appear and vanish *is* the proof that singletons matter.
+
+Finish with the build check, config restored:
+
+```bash
+pnpm --filter shell build && pnpm --filter catalog build
+```
+
+Expected: both build clean, each emitting `remoteEntry.js`, with React shared.
+
+**Check your understanding:**
+
+1. Why specifically does two copies of React on one page break hooks? What kind of state does React keep that makes a single instance necessary?
+2. What does `singleton: true` guarantee, and why is it the right choice for React but overkill for a stateless utility library?
+3. The catalog shares React; the Svelte cart shares nothing. Why is that not an inconsistency but a correct design?
+4. If the host negotiates shared deps in `shareScope: 'default'` but a remote used a different scope, what would happen — and why is it the very bug sharing is meant to prevent?
+
+## Recap
+
+You now understand the Module Federation foundation completely: remotes **expose** modules, hosts **consume** them at runtime through `remoteEntry.js`, and `shared` singletons in a common `shareScope` ensure stateful runtimes like React load exactly once — so hooks, context, and Suspense work across the boundary. You saw the two-React bug appear and disappear, which is the whole reason the config looks the way it does.
+
+Every remote from here plugs into this. It's time to build the first real one: the **catalog** — a React remote with a product grid, exposed to the shell, backed by its own Hono BFF.
+
+Next → [Catalog Remote (React) →](/mosaic/en/catalog/)
