@@ -1,0 +1,156 @@
+---
+title: The Custom Element Boundary
+description: "Wrap a remote as a custom element so the host mounts it framework-agnostically — the key to multi-framework micro-frontends."
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+A remote that exposes itself as a **custom element** — `<catalog-app>` — instead of a React component. The remote ships a `./register` module that defines the element; the host imports `register`, then renders the tag like any HTML. The element mounts the remote's framework app *inside itself* when the browser connects it to the DOM.
+
+This is the `<x-app>` pattern, and it's the single most important idea in Mosaic. Once a remote is a custom element, the host doesn't know or care what framework built it. It's the boundary that makes the Svelte [cart](/mosaic/en/cart/) mountable in a React shell in the next module.
+
+## Why
+
+The [catalog](/mosaic/en/catalog/the-catalog-remote/) worked because host and remote were both React and shared one React singleton. That's a happy accident of homogeneity. The moment a remote is Svelte, Vue, or Astro, "just render the component" stops working — there's no shared runtime, no shared component model, nothing the React host can call.
+
+Custom elements are the escape hatch, and they're a **browser standard**, not a framework feature. Every framework can render *into* a DOM node, and every framework can render *a tag*. So we agree on the one thing they all share — the DOM — and use `customElements.define()` as the contract. The remote's job: "when you're put on the page, mount my app in yourself." The host's job: "load the definition, then place the tag." Neither needs the other's framework.
+
+That inversion — the remote owns its own mounting, the host just places an element — is what makes the composition genuinely framework-agnostic.
+
+## Pros & cons
+
+**A custom element boundary vs. exposing a framework component**
+
+- **Pros:** The host mounts *any* remote the same way regardless of framework — one integration path for React, Svelte, Astro, and whatever comes next. The remote fully controls its own lifecycle and styling (optionally behind a shadow root).
+- **Cons:** You lose the frictionless prop/context/Suspense interop of same-framework components. Passing rich data now means attributes, properties, or events rather than a typed React prop, and each framework needs a small `connectedCallback`/`disconnectedCallback` wrapper.
+
+**Mounting into a shadow root vs. into light DOM**
+
+- **Pros (shadow):** Style encapsulation — the remote's CSS can't leak out and the host's can't leak in, which matters when independent teams ship independent styles.
+- **Cons (shadow):** Global design-system tokens and some third-party styles have to be deliberately let in, and a few libraries assume light DOM. For app-level mounts, light DOM is often simpler; save the shadow root for self-contained primitives like the one in the [next lesson](/mosaic/en/web-components/a-shared-primitive/).
+
+## Set it up
+
+### 1. `apps/catalog/src/register.ts`
+
+Define a custom element that mounts the React `<Catalog>` into itself on connect and tears it down on disconnect. Guard the `define` call so importing `register` twice doesn't throw.
+
+```ts
+import { createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import Catalog from './Catalog';
+
+class CatalogApp extends HTMLElement {
+  private root?: Root;
+
+  connectedCallback() {
+    this.root = createRoot(this);
+    this.root.render(createElement(Catalog));
+  }
+
+  disconnectedCallback() {
+    this.root?.unmount();
+    this.root = undefined;
+  }
+}
+
+if (!customElements.get('catalog-app')) {
+  customElements.define('catalog-app', CatalogApp);
+}
+```
+
+### 2. `apps/catalog/vite.config.ts`
+
+Expose `./register` alongside (or instead of) `./Catalog`. Same federation config as before — only the `exposes` map changes.
+
+```ts
+federation({
+  name: 'catalog',
+  filename: 'remoteEntry.js',
+  exposes: {
+    './Catalog': './src/Catalog.tsx',
+    './register': './src/register.ts',
+  },
+  shared: ['react', 'react-dom'],
+});
+```
+
+### 3. `apps/shell/src/remotes.d.ts`
+
+Declare the virtual `register` module, and teach TypeScript/JSX about the custom tag so `<catalog-app>` type-checks in the shell.
+
+```ts
+declare module 'catalog/register' {
+  // Importing the module registers <catalog-app> as a side effect.
+}
+
+declare module 'react' {
+  namespace JSX {
+    interface IntrinsicElements {
+      'catalog-app': React.HTMLAttributes<HTMLElement>;
+    }
+  }
+}
+```
+
+### 4. `apps/shell/src/CatalogRoute.tsx`
+
+Import the registrar as a side effect, then render the tag. No `React.lazy`, no `<Suspense>` for the component itself — the element mounts its own React tree. The host is agnostic: it just placed an element on the page.
+
+```tsx
+import { useEffect, useState } from 'react';
+
+export function CatalogRoute() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    // Side-effect import: defines <catalog-app>.
+    import('catalog/register').then(() => setReady(true));
+  }, []);
+
+  if (!ready) return <p>Loading catalog…</p>;
+  return <catalog-app />;
+}
+```
+
+## Verify
+
+Run the remote and shell together and load the catalog page:
+
+```bash
+pnpm --filter catalog dev     # remote on 5001
+pnpm --filter shell dev       # shell on 5000 — open the catalog page
+# The grid still renders — but now via a <catalog-app> element, not a React child.
+```
+
+Confirm the boundary really is a custom element in the browser console:
+
+```js
+customElements.get('catalog-app');
+// class CatalogApp extends HTMLElement — the definition is registered.
+
+document.querySelector('catalog-app');
+// <catalog-app> in the DOM, with the React-rendered grid inside it.
+```
+
+Prove the remote still builds with the new expose:
+
+```bash
+pnpm --filter catalog build
+# vite build completes; remoteEntry.js now exposes both ./Catalog and ./register.
+```
+
+The tell that this worked: the shell renders the catalog while treating it as opaque HTML. Swap the remote's internals for a different framework and this same `<catalog-app />` line would keep working.
+
+Check your understanding:
+
+1. Why does "just render the component" stop working the moment a remote is built with a different framework than the host?
+2. What does `connectedCallback` do here, and why is mounting the React tree there rather than in the constructor?
+3. Why does the host import `catalog/register` for its *side effect* instead of importing a component?
+4. When would you mount into a shadow root, and what does that cost you for an app-level remote?
+
+## Recap
+
+You wrapped a remote as a custom element: the remote owns its mounting via `connectedCallback`, the host just imports the registrar and places `<catalog-app>`. That's the framework-agnostic boundary the whole architecture leans on — and the exact mechanism the Svelte cart will use in [Module 6](/mosaic/en/cart/). Next, apply the same standard *downward*, to a single shared UI primitive: [A Shared Primitive →](/mosaic/en/web-components/a-shared-primitive/).

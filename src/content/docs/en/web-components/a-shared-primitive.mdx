@@ -1,0 +1,162 @@
+---
+title: A Shared Primitive
+description: "Build the first design-system primitive as a Web Component — <m-price> — usable from React, Svelte, and Astro alike."
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+`<m-price cents="1299">` — a Web Component that formats a price and renders it inside a shadow root with its own styles. It's the first piece of Mosaic's shared **design system**, and because it's a custom element, every framework in the project uses it by writing the same tag. React, Svelte, and Astro all render `<m-price cents="…">` and get an identical, consistent price.
+
+The [previous lesson](/mosaic/en/web-components/custom-element-boundary/) used a custom element to mount a whole *app*. This lesson uses the same standard at the opposite scale — a tiny reusable *UI atom* — to show the boundary works both ways.
+
+## Why
+
+Micro-frontends fragment the UI: three frameworks, three teams, three chances for the "same" price or button to look subtly different. A shared design system is the antidote — but *how* you share it across frameworks is the hard part. Ship it as a React component and Svelte can't use it. Ship three copies and they drift.
+
+A Web Component is shipped **once** and consumed **everywhere**, because the tag is a browser primitive. `<m-price>` encapsulates its formatting logic and its styles behind a shadow root, so it looks identical no matter which framework's page it lands on and no host CSS can accidentally restyle it. The design-system team owns one implementation; consumers just write a tag.
+
+The formatting-in-one-place point matters beyond looks: money is exactly the kind of thing you never want three teams each rounding their own way. Put it in the primitive, and every framework gets the same answer for free.
+
+## Pros & cons
+
+**A design-system primitive as a Web Component vs. a per-framework component library**
+
+- **Pros:** One implementation, consumed by React, Svelte, and Astro with the same markup. Shadow-DOM encapsulation guarantees consistent rendering across hosts. New frameworks get the design system for free.
+- **Cons:** Rich, typed props and framework-native ergonomics (slots-as-children, event typing) are smoother in a native component. Attributes are strings, so you serialize/parse at the boundary, and each framework has minor quirks binding to custom elements.
+
+**Reflecting an attribute (`cents="1299"`) vs. setting a DOM property (`el.cents = 1299`)**
+
+- **Pros (attribute):** Works declaratively from HTML, SSR, and every framework's template — `<m-price cents="1299">` needs no JavaScript to wire up.
+- **Cons (attribute):** Attributes are always strings and only carry primitives, so complex data (objects, arrays) must go through properties or JSON. For a single number like `cents`, the attribute is the right, simplest choice — hence `observedAttributes`.
+
+## Set it up
+
+### 1. `packages/design-system/src/m-price.ts`
+
+An autonomous custom element. It observes the `cents` attribute, re-renders on change, and keeps its markup and CSS inside a shadow root so nothing outside can restyle it.
+
+```ts
+class MPrice extends HTMLElement {
+  static get observedAttributes() {
+    return ['cents'];
+  }
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+  }
+
+  connectedCallback() {
+    this.render();
+  }
+
+  attributeChangedCallback() {
+    this.render();
+  }
+
+  private render() {
+    const cents = Number(this.getAttribute('cents') ?? '0');
+    const formatted = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(cents / 100);
+
+    this.shadowRoot!.innerHTML = `
+      <style>
+        :host { font: inherit; font-variant-numeric: tabular-nums; }
+        .amount { font-weight: 600; color: var(--m-color-price, currentColor); }
+      </style>
+      <span class="amount">${formatted}</span>
+    `;
+  }
+}
+
+if (!customElements.get('m-price')) {
+  customElements.define('m-price', MPrice);
+}
+```
+
+### 2. Consume it from React (the catalog)
+
+Import the design system once so the element is registered, then write the tag. Swap the hand-rolled `toFixed` formatting from the catalog for the shared primitive.
+
+```tsx
+import '@mosaic/design-system/m-price';
+
+// inside the product card, replacing the manual price paragraph:
+<m-price cents={String(product.priceCents)} />
+```
+
+Teach JSX about the tag (once, in the shell or catalog `remotes.d.ts`):
+
+```ts
+declare module 'react' {
+  namespace JSX {
+    interface IntrinsicElements {
+      'm-price': { cents: string };
+    }
+  }
+}
+```
+
+### 3. Consume it from Svelte and Astro
+
+The same tag, no wrapper. Svelte and Astro render custom elements natively:
+
+```svelte
+<!-- Svelte (the cart) -->
+<script>
+  import '@mosaic/design-system/m-price';
+</script>
+
+<m-price cents={String(item.priceCents)} />
+```
+
+```astro
+---
+// Astro (the content site) — import so the element is defined client-side
+import '@mosaic/design-system/m-price';
+---
+<m-price cents="1299" />
+```
+
+## Verify
+
+The fastest check needs no framework at all — a Web Component is just HTML. Drop it in a scratch page:
+
+```html
+<script type="module" src="/packages/design-system/src/m-price.ts"></script>
+<m-price cents="1299"></m-price>
+<!-- renders: $12.99 -->
+```
+
+In the browser console, confirm it's registered and reactive:
+
+```js
+customElements.get('m-price');
+// class MPrice extends HTMLElement — registered.
+
+const el = document.querySelector('m-price');
+el.setAttribute('cents', '8900');
+// The rendered text updates to $89.00 — attributeChangedCallback re-rendered it.
+```
+
+Then confirm the same tag renders in the catalog (React) and, later, the cart (Svelte) with identical output, and that the design-system package builds:
+
+```bash
+pnpm --filter @mosaic/design-system build
+# builds the primitive; catalog and cart import it and show the same price.
+```
+
+Check your understanding:
+
+1. Why can a single Web Component be consumed by React, Svelte, and Astro when a React component can't?
+2. What does the shadow root give `<m-price>`, and why does that matter across independently-styled micro-frontends?
+3. Why does `observedAttributes` list `cents`, and what would fail to update if it were omitted?
+4. When would you pass data as a DOM property instead of an attribute, and why is `cents` fine as an attribute?
+
+## Recap
+
+`<m-price>` is one implementation of a price, shipped once and rendered by every framework with the same tag — encapsulated styles, one place for the money formatting. That's the design system's foundation (Module 10 grows it into `<m-button>`, `<m-card>`, and tokens). You've now seen the custom-element boundary at both scales: whole apps and single primitives. Next, put it to work on a *different* framework — a Svelte remote mounted via a web component: [Cart Remote (Svelte) →](/mosaic/en/cart/).
