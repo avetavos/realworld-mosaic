@@ -1,0 +1,174 @@
+---
+title: The Event Bus
+description: "สร้าง @mosaic/bus — typed event bus ตัวเล็ก ๆ บน CustomEvent เพื่อให้ remote คุยกันได้โดยไม่ต้อง import กัน"
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+package `@mosaic/bus`: typed event bus ตัวเล็ก ๆ ที่ให้ micro-frontend ตัวไหนก็ได้ส่งและรับข้อความ โดยไม่ต้องรู้ว่า MFE ตัวไหนกำลังฟังอยู่ มันคือ wrapper บาง ๆ ครอบ `CustomEvent` และ `EventTarget` ของ browser เอง — ไม่มี dependency เขียนแค่ไม่กี่บรรทัด — บวกกับ TypeScript event map เพื่อให้ `bus.emit` และ `bus.on` ถูกเช็คตอน compile
+
+พอจบบทคุณจะได้ API นี้ ใช้ร่วมกันทั้งแอป:
+
+```ts
+import { bus } from '@mosaic/bus';
+
+// send
+bus.emit('cart:add', { productId: 'sku-1', name: 'Enamel Mug', priceCents: 1299 });
+
+// receive; call the returned function to stop listening
+const off = bus.on('cart:add', (payload) => {
+  console.log(payload.name); // typed as string
+});
+off();
+```
+
+บทถัดไปจะต่อ bus นี้เข้ากับ flow "add to cart" จริง บทนี้สร้าง package และที่สำคัญพอกัน คือทำให้มันเป็น **shared singleton** เพื่อให้มี bus เดียวเป๊ะ ๆ บนหน้าเว็บ
+
+## Why
+
+ใน [architecture](/mosaic/th/introduction/architecture/) remote คือ slice ที่ deploy อิสระด้วยคนละ framework catalog (React) ต้องบอก cart (Svelte) ว่ามี product ถูกเพิ่มเข้าไป วิธีที่เห็นชัดสุด — ให้ catalog `import` อะไรบางอย่างจาก cart — คือสิ่งที่เรา **ต้องไม่** ทำ:
+
+- มันผูก remote สองตัวเข้าด้วยกันตอน build ทำลาย independent deploy ทันที ตอนนี้ catalog build ไม่ได้ถ้าไม่มี cart
+- มันสมมติว่าทั้งคู่เป็น framework เดียวกันและใช้ module graph ร่วมกัน catalog เป็น React ส่วน cart เป็น Svelte ไม่มี component ร่วมให้ import
+- มันสร้างใยแมงมุมของ dependency: remote ทุกตัวที่ต้องตอบสนอง event ก็ต้อง import remote ทุกตัวที่ emit event นั้น
+
+**event bus ที่ decoupled** กลับด้านเรื่องนี้ catalog emit `cart:add` ออกไปในความว่างเปล่า มันไม่รู้และไม่สนว่าใครฟัง — อาจเป็น cart อาจเป็น analytics island หรืออาจยังไม่มีใครเลย cart subscribe `cart:add` โดยไม่รู้ว่าใคร emit ทั้งคู่ไม่ import กัน dependency ร่วมมีแค่ตัว bus เอง และ bus ก็ไม่รู้จัก remote ทั้งสองตัว
+
+เราสร้างมันบน `EventTarget` เพราะ platform แก้ปัญหานี้ไว้แล้ว: `dispatchEvent` กระจาย `CustomEvent` ออกไปให้ listener ที่ register ไว้ทุกตัวแบบ synchronous พร้อม payload `detail` ที่มีโครงสร้าง เราเพิ่มสิ่งเดียวที่ platform ไม่ได้ให้ — **types** — เพื่อให้พิมพ์ชื่อ event ผิดหรือใส่ payload ผิดรูปกลายเป็น compile error ไม่ใช่ no-op เงียบ ๆ ตอน runtime
+
+## Pros & cons
+
+**A decoupled event bus vs. remotes importing each other directly**
+
+- **Pros:** ไม่มี build-time coupling ระหว่าง remote ดังนั้นแต่ละตัวยัง deploy เองได้ ไม่ผูกกับ framework — React, Svelte และ custom element ธรรมดาพูด event เดียวกันหมด เพิ่ม listener ใหม่ได้โดยไม่ต้องแตะ emitter
+- **Cons:** การต่อสายเป็นแบบ implicit ไม่มีอะไรในโค้ดของ catalog ที่ระบุชื่อ cart คุณจึง "jump to definition" ข้ามรอยต่อไม่ได้ — ต้องไล่ตามผ่านชื่อ event fire-and-forget แปลว่าไม่มี return value: emitter ไม่ได้รู้อะไรเลยจนกว่าจะมี event *reply* กลับมา
+
+**A private `EventTarget` vs. dispatching on `window`**
+
+- **Pros:** `EventTarget` เฉพาะตัวเป็น namespace ที่สะอาด — ไม่ชนกับ event อื่นบน `window` ไม่มี third-party library มาได้ยิน `cart:add` โดยบังเอิญ typed API คือทางเข้าออกทางเดียว
+- **Cons:** มันจะทำงานได้ก็ต่อเมื่อทุก MFE ใช้ instance ของ `EventTarget` *ตัวเดียวกัน* ซึ่งไม่เกิดขึ้นอัตโนมัติภายใต้ Module Federation — remote แต่ละตัว bundle package ของตัวเองเว้นแต่เราจะ mark ให้เป็น **singleton** ถ้าพลาดตรงนี้คุณจะมี bus สองตัวที่ไม่มีวันคุยกัน (การ dispatch บน `window` global เลี่ยงเรื่องนี้ได้ แต่แลกกับ global namespace ที่ใช้ร่วมกัน)
+
+## Set it up
+
+### 1. `packages/bus/package.json`
+
+TypeScript package ธรรมดาใน workspace ไม่มี runtime dependency
+
+```json
+{
+  "name": "@mosaic/bus",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
+```
+
+### 2. `packages/bus/src/index.ts`
+
+ตัว bus ทั้งหมด map `BusEvents` เป็น single source of truth ว่าอะไรส่งได้บ้าง และแต่ละ event พก payload อะไร
+
+```ts
+// The contract: every event name and the exact shape of its payload.
+// Adding an event here is the only way to make emit/on aware of it.
+export type BusEvents = {
+  'cart:add': { productId: string; name: string; priceCents: number };
+  'cart:changed': { count: number; totalCents: number };
+  'auth:changed': { userId: string | null; name: string | null };
+};
+
+export type BusEvent = keyof BusEvents;
+
+// One EventTarget for the entire page. Because @mosaic/bus is shared as a
+// singleton (see step 3), every MFE imports THIS instance — the shell, the
+// React catalog, the Svelte cart. That shared instance is what makes the bus work.
+const target = new EventTarget();
+
+export const bus = {
+  emit<K extends BusEvent>(type: K, payload: BusEvents[K]): void {
+    target.dispatchEvent(new CustomEvent(type, { detail: payload }));
+  },
+
+  on<K extends BusEvent>(
+    type: K,
+    handler: (payload: BusEvents[K]) => void,
+  ): () => void {
+    const listener = (event: Event) => {
+      handler((event as CustomEvent<BusEvents[K]>).detail);
+    };
+    target.addEventListener(type, listener);
+    // Return an unsubscribe so callers can clean up (React effects, Svelte onMount, etc.).
+    return () => target.removeEventListener(type, listener);
+  },
+};
+```
+
+generic ทำงานให้เอง: `on('cart:add', …)` narrow `payload` ให้เป็น `{ productId, name, priceCents }` และ `emit('cart:add', {})` compile ไม่ผ่านเพราะ payload ไม่ครบ ส่วน `'cart:addd'` ที่พิมพ์ผิดก็ถูกปฏิเสธเทียบกับ `BusEvent`
+
+### 3. Share it as a singleton (`vite.config.ts`)
+
+นี่คือ step ที่พลาดง่าย `const target = new EventTarget()` ระดับ module เป็นแบบต่อ copy: ถ้า remote แต่ละตัว bundle `@mosaic/bus` ของตัวเอง แต่ละตัวก็ได้ `target` ของตัวเอง และ event ที่ emit ในตัวหนึ่งจะไม่มีวันถึง listener ในอีกตัว การ mark package เป็น **singleton** ใน Module Federation config ของทุกแอปบังคับให้ใช้ copy เดียวร่วมกัน
+
+ใน host (`apps/shell/vite.config.ts`) และใน remote **ทุกตัว** ให้ใช้ form แบบ object ของ `shared` เพื่อ pin มัน:
+
+```ts
+federation({
+  name: 'shell',
+  // ...remotes / exposes as in earlier modules...
+  shared: {
+    react: { singleton: true },
+    'react-dom': { singleton: true },
+    '@mosaic/bus': { singleton: true },
+  },
+});
+```
+
+Svelte cart ไม่ได้ share React เลย แต่มัน **ต้อง** ยังคง list `'@mosaic/bus': { singleton: true }` อยู่ดี — นั่นคือวิธีที่มันเข้าร่วม bus เดียวกันกับ React shell และ catalog
+
+## Verify
+
+build package เพื่อยืนยันว่า types ผ่าน:
+
+```bash
+pnpm --filter @mosaic/bus exec tsc --noEmit
+```
+
+คาดหวัง: **ไม่มี output** (exit สะอาดแปลว่า generic และ event map type-check ผ่าน)
+
+จากนั้น smoke test ตอน runtime เริ่มแอปตัวไหนก็ได้ที่ share bus (`pnpm --filter shell dev`) เปิด browser console แล้ว paste:
+
+```js
+const { bus } = await import('@mosaic/bus');
+const off = bus.on('cart:add', (p) => console.log('heard', p.name));
+bus.emit('cart:add', { productId: 'sku-1', name: 'Enamel Mug', priceCents: 1299 });
+// heard Enamel Mug
+off();
+bus.emit('cart:add', { productId: 'sku-1', name: 'Enamel Mug', priceCents: 1299 });
+// (nothing — the listener was removed)
+```
+
+คาดหวัง: `emit` ครั้งแรก log `heard Enamel Mug` หลัง `off()` แล้ว `emit` ครั้งที่สอง log อะไรก็ไม่ได้ นั่นพิสูจน์ทั้งสองทิศทาง — delivery และ unsubscribe — ว่าใช้ได้
+
+สุดท้าย ยืนยันว่าทั้ง workspace ยัง build ผ่าน:
+
+```bash
+pnpm -r build
+```
+
+คาดหวัง: ทุก package และแอป build โดยไม่มี error
+
+**Check your understanding:**
+
+1. ทำไม `@mosaic/bus` ต้องเป็น Module Federation singleton? อะไรจะพังถ้ามันไม่ใช่?
+2. `bus.on` return อะไร และทำไมการ return มันจึงสำคัญสำหรับ React effect หรือ Svelte component?
+3. catalog emit `cart:add` และ cart ฟังมัน แต่ทั้งคู่ไม่ import กัน coupling ที่เคยเป็น `import` ตอนนี้อยู่ตรงไหน และคุณไล่ตามมันยังไง?
+4. bus แบบ fire-and-forget ทำอะไรไม่ได้ที่ direct function call ทำได้ — และคุณจะเอาผลลัพธ์กลับมายังไง?
+
+## Recap
+
+คุณสร้าง `@mosaic/bus`: wrapper แบบ typed ครอบ `EventTarget` ที่ map `BusEvents` ทำให้ทุก `emit`/`on` ถูกเช็คตอน compile และคุณ share มันเป็น singleton เพื่อให้ทั้งหน้าใช้ bus เดียว ตอนนี้ remote คุยกันได้โดยไม่ต้อง import กัน ต่อไปเอามันไปใช้จริง: [Add to Cart →](/mosaic/th/communication/add-to-cart/) ต่อ `cart:add` และ `cart:changed` ข้ามสาม framework
