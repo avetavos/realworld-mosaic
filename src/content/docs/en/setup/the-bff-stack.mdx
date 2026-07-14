@@ -1,0 +1,144 @@
+---
+title: The BFF stack
+description: "The thin Hono backend-for-frontend every remote reuses — a tiny health endpoint, served with @hono/node-server."
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+Each remote in Mosaic is a **vertical slice**: it owns its UI *and* its own backend. That backend is a **BFF** — a backend-for-frontend — and every one is the same thin shape: a [Hono](https://hono.dev/) app, in-memory data, served on Node. In this lesson we build the reusable pattern with a trivial `GET /api/health` endpoint, then run it. The catalog's real product endpoints and the cart's real cart endpoints are just this pattern with more routes.
+
+The catalog BFF listens on **port 4001**, the cart BFF on **port 4002**. Here we'll wire the catalog's BFF as the worked example.
+
+## Why
+
+A BFF is a small server that exists to serve *one* frontend. It's not a shared microservice — it's part of the slice. That matters for micro-frontends specifically:
+
+- **The slice owns its data.** The catalog team ships product browsing *and* the API behind it, and can change both together without coordinating with a central backend team. That's what makes the slice a feature a team can own end to end.
+- **It's a seam, not a database.** The BFF shapes data for its remote. Behind it can sit anything (a real service, a third-party API); in Mosaic it's in-memory JSON, because the point is the composition, not the commerce.
+
+We use **Hono** because it's tiny, standards-based (it speaks the Web `Request`/`Response` API), and runs the same code on Node, Bun, Deno, and Cloudflare Workers — which is exactly what we want when [Module 13](/mosaic/en/deployment/) deploys each BFF as its own small service. `@hono/node-server` is the adapter that runs a Hono app on Node.
+
+## Pros & cons
+
+**A per-remote BFF vs. one shared API gateway**
+
+- **Pros:** Each slice deploys end to end on its own; no central API team is a bottleneck; the endpoint shape is tuned to exactly one frontend's needs.
+- **Cons:** Some logic (auth checks, common headers) may be duplicated across BFFs; you run more small services instead of one big one. For a storefront of a few slices, the ownership win outweighs the duplication.
+
+**Hono vs. Express**
+
+- **Pros:** Hono is smaller and faster, is built on the standard `Request`/`Response` objects (so handlers are portable across runtimes), and has first-class TypeScript inference. The same BFF can later run on Workers unchanged.
+- **Cons:** A smaller ecosystem of ready-made middleware than Express's decade of plugins. For a thin BFF that serves JSON, we need almost none of it.
+
+## Set it up
+
+### 1. `apps/catalog/bff/package.json`
+
+The BFF is its own package inside the catalog slice, with its own dependencies and its own start script. Keeping it separate from the Vite app means it deploys separately.
+
+```json
+{
+  "name": "@mosaic/catalog-bff",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
+}
+```
+
+`tsx` runs TypeScript directly, so there's no build step for the BFF during development.
+
+### 2. `apps/catalog/bff/src/app.ts`
+
+Define the Hono app on its own and export it. Separating the app from the server that runs it keeps handlers portable — the same `app` can be served by Node here or a different adapter in deployment, and it's trivially testable.
+
+```ts
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+
+export const app = new Hono();
+
+// The remote's dev server runs on a different origin, so allow it.
+app.use('/api/*', cors());
+
+// The health check every BFF exposes — the reusable shape.
+app.get('/api/health', (c) =>
+  c.json({ status: 'ok', service: 'catalog-bff' }),
+);
+
+export default app;
+```
+
+`cors()` matters because the remote (port 5001) and its BFF (port 4001) are different origins; without it the browser blocks the fetch. Every Mosaic BFF opens with the same two lines.
+
+### 3. `apps/catalog/bff/src/server.ts`
+
+The entry point that actually listens. `@hono/node-server`'s `serve` takes the app and a port and starts an HTTP server; the callback reports where it landed.
+
+```ts
+import { serve } from '@hono/node-server';
+import app from './app';
+
+const port = 4001;
+
+serve({ fetch: app.fetch, port }, (info) => {
+  console.log(`catalog-bff listening on http://localhost:${info.port}`);
+});
+```
+
+The cart BFF is byte-for-byte this pattern with `port = 4002` and its own service name.
+
+## Verify
+
+Install the new dependencies from the repo root, then start just the BFF with `--filter`:
+
+```bash
+pnpm install
+pnpm --filter @mosaic/catalog-bff dev
+```
+
+Expected console output:
+
+```
+catalog-bff listening on http://localhost:4001
+```
+
+In another terminal, hit the endpoint:
+
+```bash
+curl http://localhost:4001/api/health
+```
+
+Expected response:
+
+```json
+{"status":"ok","service":"catalog-bff"}
+```
+
+A `200` with that JSON body means the pattern works — and it's the exact pattern the catalog and cart slices extend with real routes later.
+
+**Check your understanding:**
+
+1. What makes a BFF different from a shared microservice, and why does that distinction matter for *independent deployment* of a slice?
+2. Why split the Hono app (`app.ts`) from the server that runs it (`server.ts`)?
+3. The catalog BFF runs on 4001 and its remote on 5001. Why is the `cors()` middleware necessary here?
+4. Hono handlers are built on the standard `Request`/`Response` API. What future capability (hinted at for Module 13) does that portability unlock?
+
+## Recap
+
+You've built the thin-BFF pattern: a Hono `app` with a health route, served on Node via `@hono/node-server`, running as its own package inside the slice. Catalog is on 4001, cart will be on 4002, and both are just this shape with more endpoints. Every remote now has a backend it owns.
+
+The tooling and the backend pattern are in place. Time to build the piece that composes everything — the React shell that hosts the remotes at runtime.
+
+Next → [The Shell (Host) →](/mosaic/en/shell/)

@@ -1,0 +1,168 @@
+---
+title: Monorepo & tooling
+description: "ตั้ง monorepo แบบ pnpm-workspaces, โครง apps/packages, Vite, และ Module Federation plugin ที่ทุก remote ใช้ร่วมกัน"
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+โครงกระดูกที่ module อื่นทุกตัวจะมาเติมเนื้อ: repository แบบ **pnpm-workspaces** ตัวเดียวที่เก็บ shell, remote ทุกตัว และ BFF ของมันไว้ข้างกัน พร้อม TypeScript config ที่ใช้ร่วมกัน และ dependency `@module-federation/vite` ที่ทุกตัว build อยู่บนมัน
+
+พอจบบทคุณจะได้แบบนี้บน disk:
+
+```
+mosaic/
+├── pnpm-workspace.yaml         # packages: apps/*, packages/*
+├── package.json                # root: dev deps + workspace scripts
+├── tsconfig.base.json          # one TS config every app extends
+├── apps/
+│   ├── shell/                  # React host (Vite), port 5000
+│   ├── catalog/                # React remote (Vite), port 5001 + bff/ (port 4001)
+│   ├── cart/                   # Svelte remote (Vite), port 5002 + bff/ (port 4002)
+│   └── content/                # Astro (SSR/static), port 5003
+└── packages/
+    ├── design-system/          # @mosaic/design-system — Web Component primitives
+    ├── bus/                    # @mosaic/bus — cross-MFE event bus
+    └── session/                # @mosaic/session — shared session singleton
+```
+
+บทนี้เราสร้างแค่ scaffolding ของ workspace เท่านั้น shell app สร้างใน [The Shell (Host)](/mosaic/th/shell/); ส่วน remote และ packages มาทีหลัง สิ่งที่สำคัญตอนนี้คือ *รูปทรง*: หนึ่ง repo หลาย slice ที่ build แยกกันได้อิสระ
+
+## Why
+
+Micro-frontend คือเรื่องของ **independent deployment** สัญชาตญาณแรกจึงมักเป็นหนึ่ง git repo ต่อทีม แต่ Mosaic เลือกใช้ **monorepo ตัวเดียว** แทนอย่างตั้งใจ และสองแนวคิดนี้ไม่ขัดกันเลย — boundary ที่ทำให้ deploy อิสระได้คือ Module Federation ที่โหลด remote ผ่าน network ตอน runtime *ไม่ใช่* boundary ของ repo การเก็บทุกอย่างไว้ใน workspace เดียวให้เราได้ shared types, lockfile เดียว, `pnpm install` ครั้งเดียว และรันทั้งระบบด้วยคำสั่งเดียวตอนกำลังเรียน — โดยไม่เสีย runtime independence ที่ทำให้มันเป็น micro-frontend
+
+pnpm เป็น package manager ที่เหมาะกับงานนี้เพราะ workspace support ของมันเป็น first-class: `pnpm --filter` เจาะไปที่ app หรือ BFF ตัวเดียวได้ตรง ๆ, protocol `workspace:*` link local package โดยไม่ต้อง publish และ content-addressable store ของมันทำให้ React ที่ install ใน 5 app อยู่บน disk แค่ชุดเดียว
+
+## Pros & cons
+
+**Monorepo vs. many repos (polyrepo)**
+
+- **Pros:** `pnpm install` ครั้งเดียว, lockfile เดียว, shared TypeScript types ข้าม shell กับ remote, เปลี่ยนของที่คร่อมหลายส่วนได้แบบ atomic และรันทุก app บนเครื่องพร้อมกันได้ เหมาะกับคอร์สและทีมเล็ก
+- **Cons:** ทุกทีมใช้ tooling และ CI config ของ repo เดียวร่วมกัน; การแยกทีมระดับองค์กรจริง ๆ (แยก access, แยกจังหวะ release ที่บังคับด้วย boundary ของ repo) อ่อนกว่า ในงาน production องค์กรใหญ่ *มัก* แยก repo จริง — federation runtime คือตัวที่ทำให้ deploy อิสระอยู่ดีไม่ว่าทางไหน
+
+**pnpm workspaces vs. npm/yarn workspaces**
+
+- **Pros:** install เร็วกว่า, store ประหยัด disk, dependency resolution เข้มงวด (package import ได้เฉพาะสิ่งที่มันประกาศไว้) และ `--filter` สำหรับสั่งคำสั่งเจาะจงต่อ package
+- **Cons:** ความเข้มงวดนั้นเปิดเผย bug จาก dependency ที่หายไป ซึ่ง flat `node_modules` ของ npm จะกลบไว้เงียบ ๆ — ถูกต้อง แต่บางทีก็สร้างความประหลาดใจตอน migrate project เดิม
+
+## Set it up
+
+### 1. `pnpm-workspace.yaml`
+
+ไฟล์เดียวนี้เปลี่ยน folder ให้เป็น workspace ทุก app อยู่ใต้ `apps/` ทุก shared library อยู่ใต้ `packages/`
+
+```yaml
+packages:
+  - 'apps/*'
+  - 'packages/*'
+```
+
+### 2. `package.json` (root)
+
+root package เป็น private, เก็บ dev tooling ที่ทุก app ใช้ร่วมกัน และนิยาม script อำนวยความสะดวก สังเกต `@module-federation/vite` — plugin ที่ shell และ Vite remote ทุกตัว import — อยู่ตรงนี้ เพื่อให้ version ล็อกตรงกันทั้ง workspace
+
+```json
+{
+  "name": "mosaic",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm --filter \"./apps/*\" build",
+    "typecheck": "pnpm --filter \"./apps/*\" typecheck"
+  },
+  "devDependencies": {
+    "@module-federation/vite": "^1.7.0",
+    "typescript": "^5.6.0",
+    "vite": "^7.0.0"
+  }
+}
+```
+
+`pnpm --parallel --filter "./apps/*" dev` เริ่ม dev server ของทุก app พร้อมกันเมื่อมันมีอยู่แล้ว; `--filter` แคบคำสั่งใด ๆ ให้เหลือ slice เดียว เช่น `pnpm --filter catalog dev`
+
+### 3. `tsconfig.base.json`
+
+base config เดียวที่ทุก app extend เพื่อให้ shell และ remote ใช้ strictness และ module resolution ชุดเดียวกัน `"moduleResolution": "bundler"` คือ setting ที่ถูกต้องสำหรับ Vite — มัน resolve import แบบเดียวกับที่ bundler ทำ
+
+```json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true
+  }
+}
+```
+
+จากนั้นแต่ละ app เก็บ `tsconfig.json` เล็ก ๆ ที่ extend อันนี้:
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"]
+}
+```
+
+### 4. Create the directories
+
+app แต่ละตัว scaffold ใน module ของมันเอง แต่สร้าง folder ไว้ตอนนี้เพื่อให้ workspace glob resolve ได้:
+
+```bash
+mkdir -p apps/shell apps/catalog apps/cart apps/content
+mkdir -p packages/design-system packages/bus packages/session
+```
+
+## Verify
+
+install จาก root ของ repo — pnpm อ่าน `pnpm-workspace.yaml`, เห็น app (ที่ยังว่างอยู่) แล้วเขียน lockfile เดียว:
+
+```bash
+pnpm install
+```
+
+output ที่คาดหวังจะจบด้วยประมาณนี้:
+
+```
+Done in 2.1s
+```
+
+และ `pnpm-lock.yaml` โผล่มาที่ root ยืนยัน version ของ toolchain ที่คอร์สนี้ตั้งไว้:
+
+```bash
+node --version   # v20.x or newer
+pnpm --version   # 9.x or newer
+```
+
+สุดท้าย พิสูจน์ว่า `@module-federation/vite` resolve เข้า workspace store แล้ว — นี่คือ dependency ที่ config ของทุก module ถัดไป import:
+
+```bash
+pnpm list --depth -1 @module-federation/vite
+```
+
+คาดหวัง: มัน print package โดย range `^1.7.0` ถูก resolve เป็น version จริง ถ้าใช่ แปลว่ารากฐานมั่นคง
+
+**Check your understanding:**
+
+1. Mosaic เป็นทั้ง monorepo *และ* micro-frontend architecture boundary ไหนที่ทำให้ remote deploy อิสระได้จริง — repo หรืออย่างอื่น?
+2. `pnpm --filter catalog dev` ทำอะไรที่ `pnpm dev` ที่ root ไม่ทำ?
+3. ทำไม `@module-federation/vite` ถึงอยู่ใน `package.json` ที่ *root* แทนที่จะ install แยกในแต่ละ app?
+4. `"moduleResolution": "bundler"` ใน base tsconfig แก้ปัญหาอะไรให้ project แบบ Vite?
+
+## Recap
+
+ตอนนี้คุณมี pnpm-workspaces monorepo แล้ว: `apps/*` สำหรับ shell และ remote, `packages/*` สำหรับ shared library, base TypeScript config เดียวที่ทุกตัว extend และ Module Federation plugin ที่ pin ครั้งเดียวที่ root ยังไม่มีอะไร federate — แต่ทุก app ที่คุณ build จากนี้เสียบเข้ากับรูปทรงนี้
+
+remote แต่ละตัวคือ *vertical slice*: UI ของมัน **และ** backend ของมันเอง ก่อน build UI ตัวใด มาวางรูปแบบ backend เล็ก ๆ ที่ทุก remote ใช้ซ้ำกันก่อน
+
+Next → [The BFF stack →](/mosaic/th/setup/the-bff-stack/)
