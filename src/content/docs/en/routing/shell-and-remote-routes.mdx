@@ -1,0 +1,158 @@
+---
+title: Shell and Remote Routes
+description: "The shell owns top-level routes with react-router; each remote owns its own sub-routes, nested under a shell route."
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+A two-level routing scheme. The **shell** owns the top-level routes with **react-router** (v7, in library mode) — `/`, `/catalog/*`, `/cart`, `/content`. Each **remote** owns everything *below* its slot: the catalog remote decides what `/catalog`, `/catalog/p/42`, and `/catalog/search` render, without the shell knowing those paths exist.
+
+The mechanism is a **splat route** in the shell that hands the rest of the URL to the remote, and a **descendant `<Routes>`** inside the remote that matches relative to that mount point. One browser history, two routers that agree on where the boundary is.
+
+## Why
+
+Routing is the seam where micro-frontend independence is easiest to lose. If the shell has to know every path inside the catalog, the catalog team can't add a route without a shell change — and we've quietly rebuilt the monolith we broke apart in the [architecture overview](/mosaic/en/introduction/architecture/).
+
+So we draw a contract at the **path prefix**. The shell owns prefixes and hands each remote a sub-tree of the URL:
+
+- The shell matches `/catalog/*` and mounts the catalog remote. The `*` means "and anything after."
+- Inside the remote, a descendant `<Routes>` sees the URL *relative* to `/catalog` and matches `p/42`, `search`, etc.
+
+The catalog team can now add `/catalog/deals` by editing only the catalog remote. The shell never learns the path.
+
+The one rule that makes this safe: **exactly one `BrowserRouter`, owned by the shell.** A remote must *not* create its own `BrowserRouter` — two routers each writing the History API fight over the URL. Remotes use *descendant* routes, which read from the single history the shell already owns. To make that share real across the federation boundary, `react-router` joins `react` and `react-dom` as a shared singleton.
+
+## Pros & cons
+
+**Descendant `<Routes>` (one shared router) vs. a nested `BrowserRouter` per remote**
+
+- **Pros:** One history, one source of truth for the URL. Back/forward, `<Link>`, and `useNavigate` all just work across the boundary because everyone shares the same router context.
+- **Cons:** The remote *depends on* the host's react-router as a shared singleton — versions must be compatible, and a non-React remote (the Svelte cart) can't join this context at all and needs a different bridge.
+
+**Prefix-owned routing vs. a central route manifest the shell imports**
+
+- **Pros:** Teams add and change their own sub-routes with zero shell edits — independent deployment holds for routing too.
+- **Cons:** No single file lists every route in the app; discovering the full URL map means looking across remotes. You trade a central index for autonomy.
+
+## Set it up
+
+### 1. `apps/shell/src/App.tsx`
+
+The shell defines top-level routes. `/catalog/*` mounts the federated catalog remote via `React.lazy`; the `*` forwards the rest of the path. `<Suspense>` covers the remote's load — the fallback here is a placeholder we harden in [Resilience & Performance →](/mosaic/en/resilience/).
+
+```tsx
+import { Suspense, lazy } from "react";
+import { BrowserRouter, Routes, Route, Link } from "react-router";
+
+const Catalog = lazy(() => import("catalog/Catalog"));
+
+export function App() {
+  return (
+    <BrowserRouter>
+      <nav>
+        <Link to="/">Home</Link>
+        <Link to="/catalog">Catalog</Link>
+        <Link to="/cart">Cart</Link>
+      </nav>
+
+      <Suspense fallback={<p>Loading…</p>}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          {/* splat: the shell owns the /catalog prefix, the remote owns the rest */}
+          <Route path="/catalog/*" element={<Catalog />} />
+          <Route path="/cart" element={<CartMount />} />
+        </Routes>
+      </Suspense>
+    </BrowserRouter>
+  );
+}
+```
+
+### 2. `apps/catalog/src/Catalog.tsx` (the remote's own router)
+
+The remote exposes a component that renders a **descendant `<Routes>`** — no `BrowserRouter`. Because it's rendered under the shell's `/catalog/*`, its paths are matched *relative* to `/catalog`. `to="p/42"` (no leading slash) resolves to `/catalog/p/42`.
+
+```tsx
+import { Routes, Route, Link, Outlet } from "react-router";
+
+export default function Catalog() {
+  return (
+    <Routes>
+      <Route element={<CatalogLayout />}>
+        <Route index element={<ProductGrid />} />        {/* /catalog */}
+        <Route path="search" element={<SearchResults />} /> {/* /catalog/search */}
+        <Route path="p/:id" element={<ProductDetail />} /> {/* /catalog/p/:id */}
+      </Route>
+    </Routes>
+  );
+}
+
+function CatalogLayout() {
+  return (
+    <section>
+      <Link to="search">Search</Link>
+      <Outlet /> {/* child route renders here */}
+    </section>
+  );
+}
+```
+
+### 3. `apps/shell/vite.config.ts` (share react-router as a singleton)
+
+Extend the MF `shared` list so the remote reuses the shell's router — same context, same history. Without this the remote would bundle its own react-router and its `<Routes>` would read a different context.
+
+```ts
+federation({
+  name: "shell",
+  remotes: {
+    catalog: { type: "module", name: "catalog", entry: "http://localhost:5001/remoteEntry.js", entryGlobalName: "catalog", shareScope: "default" },
+    cart:    { type: "module", name: "cart",    entry: "http://localhost:5002/remoteEntry.js", entryGlobalName: "cart",    shareScope: "default" },
+  },
+  filename: "remoteEntry.js",
+  shared: ["react", "react-dom", "react-router"], // react-router now shared
+});
+```
+
+The catalog remote's config adds the same entry to *its* `shared`, so both sides resolve one instance.
+
+### 4. The Svelte cart: a different bridge
+
+The cart is a Svelte custom element (`<cart-app>`) and cannot join React's router context. For a slice with little internal navigation, that's fine — the shell gives it a single top-level route (`/cart`) and the cart manages its own view state internally. If it ever needs URL-driven sub-views, it reads and writes the shared history through the History API (`location.pathname`, `history.pushState`) rather than react-router. State this limit honestly: the descendant-`<Routes>` trick is a *React-to-React* convenience; the universal boundary is still the URL itself.
+
+## Verify
+
+Run the shell and the catalog remote.
+
+```bash
+pnpm --filter catalog dev   # http://localhost:5001
+pnpm --filter shell dev     # http://localhost:5000
+```
+
+Then:
+
+- Visit `http://localhost:5000/catalog` — the shell's nav is present and the catalog's product grid renders in the slot.
+- Click a product; the URL becomes `/catalog/p/42` and the detail view renders. The shell's `App.tsx` has no `p/:id` route — the remote matched it.
+- Add a route inside `Catalog.tsx` (e.g. `path="deals"`) and hit `/catalog/deals`. It works with **no** change to the shell — the prefix contract held.
+- Open DevTools: only **one** router context exists; the remote did not create a second `BrowserRouter`.
+
+Confirm both sides build with the shared singleton:
+
+```bash
+pnpm --filter catalog build && pnpm --filter shell build
+# both succeed; react-router resolves to one shared instance
+```
+
+**Check your understanding:**
+
+1. What does the `*` in the shell's `/catalog/*` route do, and how does it let the remote own paths the shell has never heard of?
+2. Why must there be exactly one `BrowserRouter`, and what specifically breaks if a remote creates its own?
+3. Inside the catalog, `<Link to="p/42">` has no leading slash. What URL does it produce when mounted at `/catalog`, and why?
+4. The Svelte cart can't join react-router's context. What does it use instead to stay in sync with the URL, and why is the URL still the real boundary?
+
+## Recap
+
+The shell owns top-level routes and each remote owns its sub-routes, joined by a splat route in the shell and a descendant `<Routes>` in the remote — one `BrowserRouter`, one history, `react-router` shared as a singleton so both sides agree. Teams add sub-routes without touching the shell.
+
+That handles navigation *within* the app. Next: what happens when someone lands on `/catalog/p/42` cold, and how back/forward stays coherent — [Deep Linking →](/mosaic/en/routing/deep-linking/).

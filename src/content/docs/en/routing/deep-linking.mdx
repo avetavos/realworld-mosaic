@@ -1,0 +1,133 @@
+---
+title: Deep Linking
+description: "Make deep links resolve into the right remote, keep browser history and Back working, and keep the shell and remote routers in sync."
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+Correct behaviour for a **cold deep link** and for the **Back button**. Someone pastes `https://mosaic.app/catalog/p/42` into a fresh tab, or a marketing email links straight to it. Nothing is loaded yet — the shell isn't running, the catalog remote isn't fetched. We need that URL to boot the shell, lazy-load the catalog remote, and land on the product-detail view, with browser history intact so Back returns them where they came from.
+
+This builds directly on the two-level scheme from [Shell and Remote Routes →](/mosaic/en/routing/shell-and-remote-routes/): one `BrowserRouter`, a shell splat route, a remote's descendant `<Routes>`.
+
+## Why
+
+A deep link is the moment a runtime-composed app is most likely to break. In a single SPA the whole router ships in one bundle, so any URL resolves immediately. In Mosaic the remote that owns `/catalog/p/42` **isn't loaded yet** when that URL arrives. The resolution has to happen in stages:
+
+1. The server returns the shell's `index.html` for *any* path (SPA fallback), so `/catalog/p/42` doesn't 404.
+2. The shell's `BrowserRouter` reads `location.pathname`, matches `/catalog/*`, and triggers the `React.lazy` import of the catalog remote's `remoteEntry.js`.
+3. Once the remote's chunk arrives, its descendant `<Routes>` matches the *relative* remainder `p/42` and renders the detail view.
+
+Because all of this runs against **one** history object, the browser's Back/forward stack is coherent for free — every `<Link>` and `useNavigate`, in the shell or the remote, pushes onto the same stack. The synchronisation problem people fear with "two routers" only appears if you introduce a second history; the descendant-routes design never does. Keeping the shell and remote routers in sync is therefore not extra wiring — it's the *absence* of a second router.
+
+The failure mode to plan for is step 2: the remote's `remoteEntry.js` can fail to load (deploy in flight, network blip). A deep link that can't fetch its remote must degrade gracefully, which is why this lesson hands off to [Resilience & Performance →](/mosaic/en/resilience/).
+
+## Pros & cons
+
+**One shared history (descendant routes) vs. a bridged second router (e.g. a memory router per remote)**
+
+- **Pros:** Back/forward and deep links are correct with zero sync code; there is only one URL to be right. `useNavigate` from anywhere pushes one coherent stack.
+- **Cons:** Every remote that wants real URL sub-routes must speak the host's react-router. A non-React remote can only read/write the URL through the History API, not join the context.
+
+**SPA fallback (server rewrites all paths to `index.html`) vs. server-rendered routes**
+
+- **Pros:** Trivial hosting — one static shell serves every deep link; the client router takes over. No per-route server config.
+- **Cons:** The first paint is the shell's shell, then a lazy remote load — slower first contentful paint for a deep link than true SSR, and it needs the fallback configured or deep links 404.
+
+## Set it up
+
+### 1. Server: rewrite unknown paths to the shell's `index.html`
+
+Deep links only work if the server hands every path to the SPA. For the shell's static host (Cloudflare Pages / Workers, Vite preview, etc.), route all non-asset requests to `index.html`.
+
+```jsonc
+// apps/shell — hosting rewrite (concept; Cloudflare Pages _redirects shown)
+/*    /index.html   200
+```
+
+### 2. `apps/shell/src/App.tsx`: nothing special — the splat already resolves deep links
+
+The same splat route that handled in-app navigation resolves a cold deep link, because `BrowserRouter` reads the *initial* `location` on mount. No deep-link-specific code is needed; the lazy import fires when `/catalog/*` first matches, whether the user clicked in or landed cold.
+
+```tsx
+<Suspense fallback={<RemoteLoading name="catalog" />}>
+  <Routes>
+    <Route path="/catalog/*" element={<Catalog />} /> {/* resolves /catalog/p/42 on cold load */}
+  </Routes>
+</Suspense>
+```
+
+### 3. `apps/catalog/src/ProductDetail.tsx`: read the deep-linked param
+
+The remote's route reads `:id` from the shared router. On a cold load this runs the moment the remote's chunk finishes — the param was in the URL all along.
+
+```tsx
+import { useParams, useNavigate } from "react-router";
+
+export function ProductDetail() {
+  const { id } = useParams();            // "42" from /catalog/p/42
+  const navigate = useNavigate();        // shared history — Back-safe
+
+  return (
+    <article>
+      <h1>Product {id}</h1>
+      {/* navigate("..") returns to /catalog and pushes onto the ONE history stack */}
+      <button onClick={() => navigate("..")}>Back to catalog</button>
+    </article>
+  );
+}
+```
+
+### 4. Keeping a non-React remote in sync via the History API
+
+The Svelte cart can't call `useNavigate`, but it shares the same `window.history`. To reflect an internal view in the URL — and to react when the user presses Back — it uses the platform directly:
+
+```ts
+// inside the cart remote
+function openCheckout() {
+  history.pushState({}, "", "/cart/checkout"); // same history the shell owns
+  render("checkout");
+}
+
+// react to Back/forward driven by the shell or the browser
+addEventListener("popstate", () => render(viewFor(location.pathname)));
+```
+
+Because there is still only one history, the shell's react-router and the cart's `popstate` listener never disagree — they're observing the same object from two sides.
+
+## Verify
+
+Run the shell and catalog remote, then exercise cold entry and Back.
+
+```bash
+pnpm --filter catalog dev
+pnpm --filter shell dev
+```
+
+Then:
+
+- Open a **new tab** straight to `http://localhost:5000/catalog/p/42`. The shell boots, the catalog remote lazy-loads, and the product-detail view for id `42` renders — no 404, no blank shell.
+- In the Network panel, confirm `remoteEntry.js` for catalog is fetched *after* the shell, then the detail view appears — the staged resolution in action.
+- Navigate Home → Catalog → a product, then press **Back** twice. You retrace exactly, because every hop pushed onto one history stack.
+- Deep-link to `/cart/checkout` and press Back: the cart's `popstate` listener returns it to the cart view, in sync with the shell.
+
+Confirm a production build serves deep links (the SPA fallback is what makes this real, not just the dev server):
+
+```bash
+pnpm --filter shell build && pnpm --filter shell preview
+# open http://localhost:4173/catalog/p/42 directly — it resolves, not 404
+```
+
+**Check your understanding:**
+
+1. Trace the three stages that turn a cold `GET /catalog/p/42` into a rendered detail view. Which stage is unique to a runtime-composed app and absent from a single SPA?
+2. Why does Back/forward "just work" with no synchronisation code — what property of the design guarantees it?
+3. What does the server-side rewrite to `index.html` prevent, and why is a deep link the case that exposes its absence?
+4. The Svelte cart uses `history.pushState` and a `popstate` listener instead of react-router. Why can it still stay perfectly in sync with the shell's router?
+
+## Recap
+
+Deep links resolve in stages — SPA fallback, shell match, lazy remote load, remote match — and Back/forward stay coherent because the whole app shares one history behind one `BrowserRouter`. "Keeping the routers in sync" turned out to mean *never adding a second router*; non-React remotes bridge through the History API to the same single history.
+
+Resolving a remote on a deep link assumes the remote actually loads. It doesn't always — a `remoteEntry.js` can fail mid-deploy. Next we make that safe: [Resilience & Performance →](/mosaic/en/resilience/).

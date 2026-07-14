@@ -1,0 +1,158 @@
+---
+title: Shell and Remote Routes
+description: "shell เป็นเจ้าของ top-level route ด้วย react-router; แต่ละ remote เป็นเจ้าของ sub-route ของตัวเอง nest อยู่ใต้ route ของ shell"
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+scheme routing สองระดับ **shell** เป็นเจ้าของ top-level route ด้วย **react-router** (v7 ในโหมด library) — `/`, `/catalog/*`, `/cart`, `/content` **remote** แต่ละตัวเป็นเจ้าของทุกอย่าง *ใต้* slot ของมัน: catalog remote ตัดสินใจว่า `/catalog`, `/catalog/p/42` และ `/catalog/search` render อะไร โดย shell ไม่รู้ว่า path พวกนั้นมีอยู่
+
+กลไกคือ **splat route** ใน shell ที่ยื่นส่วนที่เหลือของ URL ให้ remote และ **descendant `<Routes>`** ข้างใน remote ที่ match แบบ relative กับ mount point นั้น browser history เดียว, router สองตัวที่เห็นตรงกันว่าเส้นแบ่งอยู่ตรงไหน
+
+## Why
+
+routing คือรอยต่อที่ทำให้ independence ของ micro-frontend หลุดง่ายที่สุด ถ้า shell ต้องรู้ทุก path ข้างใน catalog ทีม catalog ก็เพิ่ม route ไม่ได้โดยไม่แตะ shell — แล้วเราก็แอบสร้าง monolith ที่เราทุบทิ้งใน [architecture overview](/mosaic/th/introduction/architecture/) ขึ้นมาใหม่เงียบ ๆ
+
+เราจึงขีด contract ที่ **path prefix** shell เป็นเจ้าของ prefix และยื่น sub-tree ของ URL ให้แต่ละ remote:
+
+- shell match `/catalog/*` แล้ว mount catalog remote `*` แปลว่า "และอะไรก็ตามที่ตามมา"
+- ข้างใน remote descendant `<Routes>` เห็น URL แบบ *relative* กับ `/catalog` แล้ว match `p/42`, `search` เป็นต้น
+
+ตอนนี้ทีม catalog เพิ่ม `/catalog/deals` ได้โดยแก้แค่ catalog remote shell ไม่เคยรู้จัก path นั้น
+
+กฎเดียวที่ทำให้ปลอดภัย: **มี `BrowserRouter` เดียวเป๊ะ ๆ ที่ shell เป็นเจ้าของ** remote ต้อง *ไม่* สร้าง `BrowserRouter` ของตัวเอง — router สองตัวที่ต่างเขียน History API จะแย่ง URL กัน remote ใช้ *descendant* route ซึ่งอ่านจาก history เดียวที่ shell เป็นเจ้าของอยู่แล้ว เพื่อให้การ share นั้นเป็นจริงข้าม federation boundary `react-router` เข้าร่วมกับ `react` และ `react-dom` เป็น shared singleton
+
+## Pros & cons
+
+**Descendant `<Routes>` (one shared router) vs. a nested `BrowserRouter` per remote**
+
+- **Pros:** history เดียว, source of truth เดียวสำหรับ URL Back/forward, `<Link>` และ `useNavigate` ทำงานได้หมดข้าม boundary เพราะทุกคน share router context เดียวกัน
+- **Cons:** remote *พึ่ง* react-router ของ host เป็น shared singleton — version ต้อง compatible และ remote ที่ไม่ใช่ React (Svelte cart) เข้าร่วม context นี้ไม่ได้เลยและต้องใช้ bridge อื่น
+
+**Prefix-owned routing vs. a central route manifest the shell imports**
+
+- **Pros:** ทีมเพิ่มและเปลี่ยน sub-route ของตัวเองได้โดยไม่ต้องแก้ shell — independent deployment เป็นจริงสำหรับ routing ด้วย
+- **Cons:** ไม่มีไฟล์เดียวที่ list ทุก route ในแอป; จะรู้ URL map ทั้งหมดต้องดูข้าม remote คุณแลก index กลางกับ autonomy
+
+## Set it up
+
+### 1. `apps/shell/src/App.tsx`
+
+shell นิยาม top-level route `/catalog/*` mount federated catalog remote ผ่าน `React.lazy`; `*` forward path ที่เหลือ `<Suspense>` ครอบการโหลด remote — fallback ตรงนี้เป็น placeholder ที่เรา harden ใน [Resilience & Performance →](/mosaic/th/resilience/)
+
+```tsx
+import { Suspense, lazy } from "react";
+import { BrowserRouter, Routes, Route, Link } from "react-router";
+
+const Catalog = lazy(() => import("catalog/Catalog"));
+
+export function App() {
+  return (
+    <BrowserRouter>
+      <nav>
+        <Link to="/">Home</Link>
+        <Link to="/catalog">Catalog</Link>
+        <Link to="/cart">Cart</Link>
+      </nav>
+
+      <Suspense fallback={<p>Loading…</p>}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          {/* splat: the shell owns the /catalog prefix, the remote owns the rest */}
+          <Route path="/catalog/*" element={<Catalog />} />
+          <Route path="/cart" element={<CartMount />} />
+        </Routes>
+      </Suspense>
+    </BrowserRouter>
+  );
+}
+```
+
+### 2. `apps/catalog/src/Catalog.tsx` (the remote's own router)
+
+remote expose component ที่ render **descendant `<Routes>`** — ไม่มี `BrowserRouter` เพราะมัน render อยู่ใต้ `/catalog/*` ของ shell path ของมันจึง match แบบ *relative* กับ `/catalog` `to="p/42"` (ไม่มี slash นำหน้า) resolve เป็น `/catalog/p/42`
+
+```tsx
+import { Routes, Route, Link, Outlet } from "react-router";
+
+export default function Catalog() {
+  return (
+    <Routes>
+      <Route element={<CatalogLayout />}>
+        <Route index element={<ProductGrid />} />        {/* /catalog */}
+        <Route path="search" element={<SearchResults />} /> {/* /catalog/search */}
+        <Route path="p/:id" element={<ProductDetail />} /> {/* /catalog/p/:id */}
+      </Route>
+    </Routes>
+  );
+}
+
+function CatalogLayout() {
+  return (
+    <section>
+      <Link to="search">Search</Link>
+      <Outlet /> {/* child route renders here */}
+    </section>
+  );
+}
+```
+
+### 3. `apps/shell/vite.config.ts` (share react-router as a singleton)
+
+ขยาย list `shared` ของ MF เพื่อให้ remote reuse router ของ shell — context เดียว, history เดียว หากไม่มีสิ่งนี้ remote จะ bundle react-router ของตัวเองและ `<Routes>` ของมันจะอ่านคนละ context
+
+```ts
+federation({
+  name: "shell",
+  remotes: {
+    catalog: { type: "module", name: "catalog", entry: "http://localhost:5001/remoteEntry.js", entryGlobalName: "catalog", shareScope: "default" },
+    cart:    { type: "module", name: "cart",    entry: "http://localhost:5002/remoteEntry.js", entryGlobalName: "cart",    shareScope: "default" },
+  },
+  filename: "remoteEntry.js",
+  shared: ["react", "react-dom", "react-router"], // react-router now shared
+});
+```
+
+config ของ catalog remote เพิ่ม entry เดียวกันเข้าไปใน `shared` ของ *มัน* เพื่อให้ทั้งสองฝั่ง resolve ไปที่ instance เดียว
+
+### 4. The Svelte cart: a different bridge
+
+cart เป็น Svelte custom element (`<cart-app>`) และเข้าร่วม router context ของ React ไม่ได้ สำหรับ slice ที่มี navigation ภายในน้อย นั่นก็โอเค — shell ให้ top-level route เดียว (`/cart`) และ cart จัดการ view state ของตัวเองภายใน ถ้าวันหนึ่งมันต้องการ sub-view ที่ขับด้วย URL มันอ่านและเขียน shared history ผ่าน History API (`location.pathname`, `history.pushState`) แทน react-router พูดข้อจำกัดนี้ตรง ๆ: กล descendant-`<Routes>` เป็นความสะดวกแบบ *React-to-React*; boundary ที่ universal ยังคงเป็น URL เอง
+
+## Verify
+
+รัน shell และ catalog remote
+
+```bash
+pnpm --filter catalog dev   # http://localhost:5001
+pnpm --filter shell dev     # http://localhost:5000
+```
+
+จากนั้น:
+
+- เข้า `http://localhost:5000/catalog` — nav ของ shell อยู่ครบและ product grid ของ catalog render ใน slot
+- คลิก product; URL กลายเป็น `/catalog/p/42` และ detail view render `App.tsx` ของ shell ไม่มี route `p/:id` — remote เป็นตัว match มัน
+- เพิ่ม route ข้างใน `Catalog.tsx` (เช่น `path="deals"`) แล้วเข้า `/catalog/deals` มันทำงานโดย **ไม่** แก้ shell — contract ของ prefix ยังอยู่
+- เปิด DevTools: มี router context **เดียว** เท่านั้น; remote ไม่ได้สร้าง `BrowserRouter` ตัวที่สอง
+
+ยืนยันว่าทั้งสองฝั่ง build ด้วย shared singleton:
+
+```bash
+pnpm --filter catalog build && pnpm --filter shell build
+# both succeed; react-router resolves to one shared instance
+```
+
+**Check your understanding:**
+
+1. `*` ใน route `/catalog/*` ของ shell ทำอะไร และมันทำให้ remote เป็นเจ้าของ path ที่ shell ไม่เคยได้ยินได้ยังไง?
+2. ทำไมต้องมี `BrowserRouter` เดียวเป๊ะ ๆ และอะไรพังเจาะจงถ้า remote สร้างตัวของมันเอง?
+3. ข้างใน catalog `<Link to="p/42">` ไม่มี slash นำหน้า มันสร้าง URL อะไรเมื่อ mount ที่ `/catalog` และทำไม?
+4. Svelte cart เข้าร่วม context ของ react-router ไม่ได้ มันใช้อะไรแทนเพื่อ sync กับ URL และทำไม URL ยังเป็น boundary ตัวจริง?
+
+## Recap
+
+shell เป็นเจ้าของ top-level route และแต่ละ remote เป็นเจ้าของ sub-route ของมัน เชื่อมด้วย splat route ใน shell และ descendant `<Routes>` ใน remote — `BrowserRouter` เดียว, history เดียว, `react-router` share เป็น singleton เพื่อให้ทั้งสองฝั่งเห็นตรงกัน ทีมเพิ่ม sub-route ได้โดยไม่แตะ shell
+
+นั่นจัดการ navigation *ภายใน* แอป ต่อไป: เกิดอะไรขึ้นเมื่อมีคน land บน `/catalog/p/42` แบบ cold และ Back/forward ยัง coherent ได้ยังไง — [Deep Linking →](/mosaic/th/routing/deep-linking/)

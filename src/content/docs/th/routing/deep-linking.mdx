@@ -1,0 +1,133 @@
+---
+title: Deep Linking
+description: "ทำให้ deep link resolve เข้า remote ที่ถูกต้อง, ให้ browser history และ Back ทำงาน, และให้ router ของ shell กับ remote sync กัน"
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+behaviour ที่ถูกต้องสำหรับ **cold deep link** และสำหรับปุ่ม **Back** มีคน paste `https://mosaic.app/catalog/p/42` ลง tab ใหม่ หรือ email การตลาด link ตรงไปที่มัน ยังไม่มีอะไรโหลดเลย — shell ยังไม่รัน, catalog remote ยังไม่ถูก fetch เราต้องการให้ URL นั้น boot shell, lazy-load catalog remote แล้ว land ที่ product-detail view โดย browser history ครบถ้วนเพื่อให้ Back พาผู้ใช้กลับไปที่ที่เขามา
+
+นี่ต่อยอดตรง ๆ จาก scheme สองระดับใน [Shell and Remote Routes →](/mosaic/th/routing/shell-and-remote-routes/): `BrowserRouter` เดียว, shell splat route, descendant `<Routes>` ของ remote
+
+## Why
+
+deep link คือจังหวะที่แอปแบบ runtime-composed มีโอกาสพังมากที่สุด ใน SPA เดี่ย่ว router ทั้งตัว ship มาใน bundle เดียว URL ไหนก็ resolve ได้ทันที ใน Mosaic remote ที่เป็นเจ้าของ `/catalog/p/42` **ยังไม่ถูกโหลด** ตอน URL นั้นมาถึง การ resolve ต้องเกิดเป็น stage:
+
+1. server return `index.html` ของ shell สำหรับ path *ใด ๆ* (SPA fallback) `/catalog/p/42` จึงไม่ 404
+2. `BrowserRouter` ของ shell อ่าน `location.pathname`, match `/catalog/*` แล้ว trigger การ import ของ catalog remote's `remoteEntry.js` ผ่าน `React.lazy`
+3. พอ chunk ของ remote มาถึง descendant `<Routes>` ของมัน match ส่วนที่เหลือแบบ *relative* `p/42` แล้ว render detail view
+
+เพราะทั้งหมดนี้รันกับ history object **ตัวเดียว** stack Back/forward ของ browser จึง coherent ฟรี — ทุก `<Link>` และ `useNavigate` ไม่ว่าใน shell หรือ remote push ลง stack เดียวกัน ปัญหา synchronisation ที่คนกลัวกับ "router สองตัว" จะโผล่ก็ต่อเมื่อคุณใส่ history ตัวที่สองเข้าไป; design แบบ descendant-routes ไม่เคยทำแบบนั้น การให้ router ของ shell กับ remote sync กันจึงไม่ใช่การต่อสายเพิ่ม — มันคือ *การไม่มี* router ตัวที่สอง
+
+failure mode ที่ต้องวางแผนรับคือ step 2: `remoteEntry.js` ของ remote อาจโหลดไม่สำเร็จ (deploy กำลังวิ่งอยู่, network สะดุด) deep link ที่ fetch remote ไม่ได้ต้อง degrade อย่าง graceful ซึ่งเป็นเหตุผลที่บทนี้ส่งต่อไปยัง [Resilience & Performance →](/mosaic/th/resilience/)
+
+## Pros & cons
+
+**One shared history (descendant routes) vs. a bridged second router (e.g. a memory router per remote)**
+
+- **Pros:** Back/forward และ deep link ถูกต้องโดยไม่มี sync code เลย; มี URL เดียวให้ทำให้ถูก `useNavigate` จากที่ไหนก็ push ลง stack เดียวที่ coherent
+- **Cons:** ทุก remote ที่อยากได้ URL sub-route จริงต้องพูด react-router ของ host remote ที่ไม่ใช่ React อ่าน/เขียน URL ได้ผ่าน History API เท่านั้น ไม่สามารถเข้าร่วม context
+
+**SPA fallback (server rewrites all paths to `index.html`) vs. server-rendered routes**
+
+- **Pros:** hosting ง่ายมาก — shell static เดียว serve ทุก deep link; client router รับช่วงต่อ ไม่ต้อง config server ต่อ route
+- **Cons:** paint แรกคือ shell เปล่า ๆ ของ shell แล้วค่อย lazy โหลด remote — first contentful paint สำหรับ deep link ช้ากว่า SSR จริง และต้อง config fallback ไม่งั้น deep link 404
+
+## Set it up
+
+### 1. Server: rewrite unknown paths to the shell's `index.html`
+
+deep link ทำงานได้ก็ต่อเมื่อ server ยื่นทุก path ให้ SPA สำหรับ static host ของ shell (Cloudflare Pages / Workers, Vite preview เป็นต้น) route ทุก request ที่ไม่ใช่ asset ไปที่ `index.html`
+
+```jsonc
+// apps/shell — hosting rewrite (concept; Cloudflare Pages _redirects shown)
+/*    /index.html   200
+```
+
+### 2. `apps/shell/src/App.tsx`: nothing special — the splat already resolves deep links
+
+splat route ตัวเดียวกับที่จัดการ in-app navigation resolve cold deep link ได้ เพราะ `BrowserRouter` อ่าน `location` *ตอนเริ่ม* ตอน mount ไม่ต้องมีโค้ดเฉพาะ deep-link; การ lazy import fire ตอนที่ `/catalog/*` match ครั้งแรก ไม่ว่าผู้ใช้จะคลิกเข้ามาหรือ land แบบ cold
+
+```tsx
+<Suspense fallback={<RemoteLoading name="catalog" />}>
+  <Routes>
+    <Route path="/catalog/*" element={<Catalog />} /> {/* resolves /catalog/p/42 on cold load */}
+  </Routes>
+</Suspense>
+```
+
+### 3. `apps/catalog/src/ProductDetail.tsx`: read the deep-linked param
+
+route ของ remote อ่าน `:id` จาก shared router ตอน cold load มันรันทันทีที่ chunk ของ remote เสร็จ — param อยู่ใน URL มาตลอดอยู่แล้ว
+
+```tsx
+import { useParams, useNavigate } from "react-router";
+
+export function ProductDetail() {
+  const { id } = useParams();            // "42" from /catalog/p/42
+  const navigate = useNavigate();        // shared history — Back-safe
+
+  return (
+    <article>
+      <h1>Product {id}</h1>
+      {/* navigate("..") returns to /catalog and pushes onto the ONE history stack */}
+      <button onClick={() => navigate("..")}>Back to catalog</button>
+    </article>
+  );
+}
+```
+
+### 4. Keeping a non-React remote in sync via the History API
+
+Svelte cart เรียก `useNavigate` ไม่ได้ แต่มัน share `window.history` ตัวเดียวกัน เพื่อสะท้อน view ภายในลงใน URL — และเพื่อ react เมื่อผู้ใช้กด Back — มันใช้ platform ตรง ๆ:
+
+```ts
+// inside the cart remote
+function openCheckout() {
+  history.pushState({}, "", "/cart/checkout"); // same history the shell owns
+  render("checkout");
+}
+
+// react to Back/forward driven by the shell or the browser
+addEventListener("popstate", () => render(viewFor(location.pathname)));
+```
+
+เพราะยังมี history เดียว react-router ของ shell กับ `popstate` listener ของ cart จึงไม่มีวันขัดกัน — พวกมันสังเกต object เดียวกันจากคนละฝั่ง
+
+## Verify
+
+รัน shell และ catalog remote แล้วลอง cold entry และ Back
+
+```bash
+pnpm --filter catalog dev
+pnpm --filter shell dev
+```
+
+จากนั้น:
+
+- เปิด **tab ใหม่** ตรงไปที่ `http://localhost:5000/catalog/p/42` shell boot, catalog remote lazy-load และ product-detail view สำหรับ id `42` render — ไม่ 404, ไม่มี shell เปล่า
+- ใน Network panel ยืนยันว่า `remoteEntry.js` ของ catalog ถูก fetch *หลัง* shell แล้ว detail view ค่อยปรากฏ — การ resolve เป็น stage ในการทำงานจริง
+- navigate Home → Catalog → product ตัวหนึ่ง แล้วกด **Back** สองครั้ง คุณย้อนกลับเป๊ะ ๆ เพราะทุก hop push ลง history stack เดียว
+- deep-link ไปที่ `/cart/checkout` แล้วกด Back: `popstate` listener ของ cart พามันกลับไปที่ cart view sync กับ shell
+
+ยืนยันว่า production build serve deep link ได้ (SPA fallback คือสิ่งที่ทำให้มันจริง ไม่ใช่แค่ dev server):
+
+```bash
+pnpm --filter shell build && pnpm --filter shell preview
+# open http://localhost:4173/catalog/p/42 directly — it resolves, not 404
+```
+
+**Check your understanding:**
+
+1. ไล่สาม stage ที่เปลี่ยน cold `GET /catalog/p/42` ให้เป็น detail view ที่ render แล้ว stage ไหนเป็นของเฉพาะแอป runtime-composed และไม่มีใน SPA เดี่ยว?
+2. ทำไม Back/forward ถึง "ทำงานเอง" โดยไม่มี synchronisation code — property อะไรของ design ที่รับประกันมัน?
+3. server-side rewrite ไป `index.html` ป้องกันอะไร และทำไม deep link คือเคสที่เปิดโปงการไม่มีมัน?
+4. Svelte cart ใช้ `history.pushState` และ `popstate` listener แทน react-router ทำไมมันยัง sync กับ router ของ shell ได้เป๊ะ ๆ?
+
+## Recap
+
+deep link resolve เป็น stage — SPA fallback, shell match, lazy remote load, remote match — และ Back/forward ยัง coherent เพราะทั้งแอป share history เดียวหลัง `BrowserRouter` เดียว "การให้ router sync กัน" กลายเป็นความหมายว่า *ไม่เคยเพิ่ม router ตัวที่สอง*; remote ที่ไม่ใช่ React bridge ผ่าน History API ไปยัง history เดียวตัวเดียวกัน
+
+การ resolve remote บน deep link สมมติว่า remote โหลดได้จริง ซึ่งไม่เสมอไป — `remoteEntry.js` อาจ fail กลาง deploy ต่อไปเราทำให้มันปลอดภัย: [Resilience & Performance →](/mosaic/th/resilience/)
