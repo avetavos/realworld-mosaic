@@ -1,0 +1,189 @@
+---
+title: Mount via web component
+description: "Compile the Svelte cart to a <cart-app> custom element, expose ./register through Module Federation, and mount it in the React shell — the cross-framework payoff."
+sidebar:
+  order: 2
+---
+
+## What we're building
+
+Last lesson left us with a working Svelte cart that the React shell **can't mount** — React has no way to `import` and render a Svelte component. This lesson closes that gap and delivers the whole point of Mosaic: **a React host rendering a Svelte remote at runtime**, with neither side sharing a framework.
+
+The bridge is a [Web Component](/mosaic/en/web-components/). We compile the cart to a `<cart-app>` custom element, expose a tiny `./register` module through Module Federation, and the shell does `await import('cart/register')` then renders `<cart-app>` in JSX like any other tag.
+
+By the end:
+
+- `apps/cart` exposes `./register` (not a component) via `@module-federation/vite`.
+- Importing `cart/register` defines the `<cart-app>` custom element as a side effect.
+- The React shell mounts the Svelte cart with two lines of JSX.
+
+## Why
+
+In [Module 4](/mosaic/en/catalog/) the shell consumed the catalog as a React component — `React.lazy(() => import('catalog/Catalog'))` — because both sides share React as a singleton. That path is closed here: Svelte isn't React, so there's no component type the host understands.
+
+The browser already has a framework-neutral component model, though: **custom elements**. Every framework can render a `<cart-app>` tag, and the browser instantiates it. So instead of exposing a *Svelte component*, the cart exposes a *registrar* — a module whose only job is to call `customElements.define('cart-app', …)`. Svelte 5 does that definition for us when we set the [`customElement` compiler option](https://svelte.dev/docs/svelte/custom-elements) and give the component a `<svelte:options customElement="cart-app" />` tag. Importing the module runs the definition; from then on `<cart-app>` is a real HTML element the shell can render, style, and remove.
+
+This is the generalisation [Module 5](/mosaic/en/web-components/) promised: **the custom element is the universal mount boundary.** The catalog *could* expose one too; the cart *must*, because it's a different framework. Same seam, and every future remote can use it.
+
+## Pros & cons
+
+**Exposing a custom-element registrar vs. exposing a framework component**
+
+- **Pros:** Framework-agnostic — the host renders a tag, not a React/Svelte/Vue type; the remote can change its internal framework without breaking the host contract; the shape (`import for side effect`, then render a tag) is identical for every non-React remote.
+- **Cons:** You lose typed props/children that a React component gives you — communication happens through attributes, properties, and events instead; the Svelte remote ships its own runtime (no shared singleton); shadow-DOM styling has its own rules to learn.
+
+**Svelte's built-in `customElement` compiler vs. a hand-written wrapper class**
+
+- **Pros:** No boilerplate — one `<svelte:options>` tag and the compiler generates the `HTMLElement` subclass, attribute reflection, and lifecycle; props map to element properties automatically.
+- **Cons:** Less control over the exact element lifecycle and shadow-DOM boundary; some interop details (slotted content, event naming) follow Svelte's conventions rather than yours; you opt the whole component into custom-element semantics.
+
+## Set it up
+
+### 1. `apps/cart/src/cart-app.svelte`
+
+A thin wrapper that declares the custom element tag and renders the real `Cart` component from the previous lesson. Keeping the wrapper separate means `Cart.svelte` stays a normal component you can still mount directly in dev.
+
+```svelte
+<svelte:options customElement="cart-app" />
+
+<script lang="ts">
+  import Cart from './Cart.svelte';
+</script>
+
+<Cart />
+```
+
+### 2. `apps/cart/src/register.ts`
+
+The exposed module. Importing `cart-app.svelte` runs Svelte's generated `customElements.define('cart-app', …)` as a side effect — so this file has no exports, only an import. That's the whole registrar.
+
+```ts
+// Importing the component compiles-and-defines the <cart-app> custom element.
+// No exports: the side effect *is* the API.
+import './cart-app.svelte';
+```
+
+### 3. `apps/cart/vite.config.ts`
+
+Two changes to last lesson's config: turn on custom-element compilation, and add the federation plugin exposing `./register`. Per the build contract, the cart shares **nothing** with the host — it's Svelte, so there's no React singleton to reuse — and `type: 'module'` with `build.target: 'esnext'` are required for Vite remotes.
+
+```ts
+import { defineConfig } from 'vite';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { federation } from '@module-federation/vite';
+
+export default defineConfig({
+  plugins: [
+    svelte({
+      // Compile components that declare <svelte:options customElement="…" />
+      // to custom elements. Components without that tag stay normal.
+      compilerOptions: { customElement: true },
+    }),
+    federation({
+      name: 'cart',
+      filename: 'remoteEntry.js',
+      // The Svelte remote exposes a REGISTRAR, not a component.
+      exposes: { './register': './src/register.ts' },
+      shared: [], // shares nothing React with the host
+    }),
+  ],
+  server: {
+    port: 5002,
+    origin: 'http://localhost:5002',
+    proxy: { '/api': 'http://localhost:4002' },
+  },
+  build: { target: 'esnext' },
+});
+```
+
+### 4. `apps/shell/vite.config.ts` — register the remote
+
+The host already lists `catalog`; add `cart` alongside it. Note the cart entry looks identical to a React remote's — the host doesn't know or care that it's Svelte.
+
+```ts
+federation({
+  name: 'shell',
+  remotes: {
+    catalog: { type: 'module', name: 'catalog', entry: 'http://localhost:5001/remoteEntry.js', entryGlobalName: 'catalog', shareScope: 'default' },
+    cart:    { type: 'module', name: 'cart',    entry: 'http://localhost:5002/remoteEntry.js', entryGlobalName: 'cart',    shareScope: 'default' },
+  },
+  filename: 'remoteEntry.js',
+  shared: ['react', 'react-dom'],
+});
+```
+
+### 5. `apps/shell/src/CartPanel.tsx` — mount it in React
+
+Import the registrar for its side effect, then render the tag. We define the element once on mount and track when it's ready so React doesn't render `<cart-app>` before it exists. JSX passes `cart-app` straight through to the DOM — it's a real custom element, so React just creates it.
+
+```tsx
+import { useEffect, useState } from 'react';
+
+export function CartPanel() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    // Loads cart/remoteEntry.js and runs customElements.define('cart-app', …).
+    import('cart/register').then(() => setReady(true));
+  }, []);
+
+  if (!ready) return <p>Loading cart…</p>;
+
+  // A Svelte component, rendered by React, as a plain HTML tag.
+  return <cart-app></cart-app>;
+}
+```
+
+TypeScript doesn't know about `<cart-app>` by default. Declare it once so JSX type-checks:
+
+```ts
+// apps/shell/src/custom-elements.d.ts
+declare namespace JSX {
+  interface IntrinsicElements {
+    'cart-app': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+  }
+}
+```
+
+## Verify
+
+Start the cart BFF, the cart remote, and the shell:
+
+```bash
+pnpm --filter cart exec tsx bff/server.ts   # BFF on 4002
+pnpm --filter cart dev                       # remote on 5002
+pnpm --filter shell dev                      # shell on 5000
+```
+
+Confirm the remote actually publishes the registrar:
+
+```bash
+curl -s http://localhost:5002/remoteEntry.js | grep -o './register'
+# → ./register
+```
+
+Open the shell at `http://localhost:5000` and navigate to the cart. You should see:
+
+- The Svelte cart rendered **inside the React shell** — same UI as the standalone app in the previous lesson.
+- In DevTools, a real `<cart-app>` element in the DOM (expand it to see Svelte's shadow DOM).
+- The Network tab loading `remoteEntry.js` from `localhost:5002` at runtime — the shell was never built with the cart.
+
+Then confirm both sides build:
+
+```bash
+pnpm --filter cart build && pnpm --filter shell build
+# → ✓ built in …ms   (both)
+```
+
+**Check your understanding:**
+
+1. The catalog is mounted with `React.lazy(() => import('catalog/Catalog'))`, but the cart is mounted with `import('cart/register')` then `<cart-app>`. Why can't the cart use the catalog's approach?
+2. `register.ts` has no exports — only a single import. What is it actually doing, and why is that enough?
+3. The cart's federation config sets `shared: []` while the catalog shares `react`/`react-dom`. Why is empty correct for the cart?
+4. If the cart team rewrote their remote in Vue tomorrow but kept exposing `./register` and defining `<cart-app>`, what would the shell need to change?
+
+## Recap
+
+You just did the thing the whole architecture was built for: a **React host rendering a Svelte remote at runtime**, bridged by a `<cart-app>` custom element and delivered over Module Federation. The shell renders a tag; the browser instantiates a Svelte app; nobody shares a framework. That's cross-framework federation, working.
+
+Two remotes down, one framework left to fit — and it's the awkward one. Astro doesn't runtime-federate like a SPA at all. Next: [The Astro app →](/mosaic/en/content/), and then the honest story of composing something that *won't* be a Module Federation remote.

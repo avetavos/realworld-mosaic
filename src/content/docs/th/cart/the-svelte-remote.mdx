@@ -1,0 +1,265 @@
+---
+title: The Svelte remote
+description: "สร้าง cart เป็น Svelte 5 remote ด้วย runes UI พร้อม Hono BFF ของตัวเองบน port 4002 — vertical slice เต็มรูปแบบใน framework ที่สอง"
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+catalog พิสูจน์ pattern แล้ว: remote ที่เป็นเจ้าของทั้ง UI **และ** data ของมัน mount ใน shell ตอน runtime ตอนนี้เราสร้าง slice ที่สอง — **cart** — ใน *framework คนละตัว* คือ [Svelte 5](https://svelte.dev/) นี่คือจังหวะที่ architecture พิสูจน์คุณค่าตัวเอง: shell เป็น React, cart เป็น Svelte, และไม่มีฝ่ายไหนต้องรู้หรือสน
+
+บทนี้สร้าง cart เป็น standalone Svelte app ก่อน — UI เป็น runes, Hono BFF บน port **4002** — รันจบครบวงจรด้วยตัวเอง บทถัดไป [Mount via web component →](/mosaic/th/cart/mount-via-web-component/) จะ wrap มันเป็น custom element เพื่อให้ React shell mount มันได้
+
+พอจบคุณจะมี:
+
+- `apps/cart/bff` — Hono BFF ที่ expose `GET /api/cart`, `POST /api/cart/items`, `DELETE /api/cart/items/:id`
+- `apps/cart` — Svelte 5 Vite app (port 5002) ที่อ่านและแก้ cart ผ่าน BFF นั้น
+
+## Why
+
+เราจะสร้าง cart ใน React แล้วให้ทุกอย่างเป็นแบบเดียวกันหมดก็ได้ แต่เราจงใจไม่ทำ คำสัญญาทั้งหมดของ micro-frontend คือ **tech ที่อิสระ** — ทีมเลือก framework ที่เหมาะกับปัญหาของมัน แล้วการประกอบยังยึดอยู่ ถ้า Mosaic เป็น React ทั้งหมด "multi-framework" ก็จะเป็นคำอ้างที่เราไม่เคยทดสอบ Svelte ตรงนี้คือหลักฐาน
+
+Svelte 5 เป็นตัวเทียบที่ดีกับ React โดยเฉพาะเพราะมัน *ต่างในจุดที่สำคัญ*: ไม่มี virtual DOM, reactivity ตอน compile-time, และ [runes](https://svelte.dev/docs/svelte/what-are-runes) API ใหม่ (`$state`, `$derived`, `$effect`) แทน hooks ถ้า boundary ระหว่าง shell กับ remote ดูดซับความต่างนั้นได้อย่างสะอาด มันก็ดูดซับอะไรก็ได้เกือบทั้งหมด — และ boundary นั้นคือ Web Component ที่เราสร้างในบทถัดไป
+
+cart ยังทำตามกฎ **vertical slice** เดียวกับ catalog: BFF ของตัวเอง, data ของตัวเอง, deploy เองได้ การที่มันเป็น Svelte ไม่เปลี่ยน contract นั้นเลย
+
+## Pros & cons
+
+**A second framework (Svelte) vs. keeping everything React**
+
+- **Pros:** พิสูจน์ว่าการประกอบเป็น framework-agnostic ของจริง ปล่อยให้แต่ละทีม optimise ให้ปัญหาของตัวเอง output ที่ compile แล้วของ Svelte เล็กและเร็ว ซึ่งเหมาะกับ widget ที่เบ็ดเสร็จในตัวเองอย่าง cart
+- **Cons:** สอง mental model และสอง toolchain ที่ทีมต้องแบก ไม่มี React singleton ที่ share กันแปลว่า Svelte bundle ต้อง ship runtime ของตัวเอง (เล็ก แต่ไม่ใช่ศูนย์) mount boundary ต้องมี contract ที่เป็นกลางต่อ framework (เหตุผลที่บทถัดไปมีอยู่)
+
+**A dedicated cart BFF vs. one shared backend for the whole store**
+
+- **Pros:** cart เป็นเจ้าของ data และ endpoint ของมัน จึง deploy เป็นหน่วยเดียว ไม่มี coupling ข้ามทีมบน API ที่ share กัน คุณ reason เรื่อง cart state แบบแยกเดี่ยวได้
+- **Cons:** state ที่พาดข้าม slice (ราคาของ product อยู่ใน catalog แต่ cart เก็บ copy ไว้) ต้องถูกส่งข้าม boundary ไม่ใช่ query เอา มี service เล็ก ๆ ให้รันใน dev มากขึ้น
+
+## Set it up
+
+### 1. `apps/cart/bff/server.ts`
+
+BFF เก็บ cart ใน memory ที่ key ด้วย process (mock session เดียวสำหรับคอร์สนี้) มันสะท้อน endpoint เป๊ะ ๆ ตาม build contract
+
+```ts
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { serve } from '@hono/node-server';
+
+type CartItem = {
+  id: string;
+  productId: string;
+  name: string;
+  priceCents: number;
+  qty: number;
+};
+
+// In-memory cart for a single mock session. Real apps key this by session id.
+const cart = new Map<string, CartItem>();
+
+const app = new Hono();
+
+// The remote (5002) and the shell (5000) both call this BFF from the browser.
+app.use('/api/*', cors({ origin: ['http://localhost:5002', 'http://localhost:5000'] }));
+
+app.get('/api/cart', (c) => {
+  const items = [...cart.values()];
+  const totalCents = items.reduce((sum, i) => sum + i.priceCents * i.qty, 0);
+  return c.json({ items, totalCents });
+});
+
+// Body mirrors the `cart:add` bus payload we wire up in Module 8:
+// { productId, name, priceCents, qty? }. The cart stores its own copy of the
+// product details rather than querying catalog across the slice boundary.
+app.post('/api/cart/items', async (c) => {
+  const { productId, name, priceCents, qty = 1 } = await c.req.json();
+  const existing = [...cart.values()].find((i) => i.productId === productId);
+  if (existing) {
+    existing.qty += qty;
+  } else {
+    const id = crypto.randomUUID();
+    cart.set(id, { id, productId, name, priceCents, qty });
+  }
+  return c.json({ ok: true }, 201);
+});
+
+app.delete('/api/cart/items/:id', (c) => {
+  cart.delete(c.req.param('id'));
+  return c.json({ ok: true });
+});
+
+serve({ fetch: app.fetch, port: 4002 }, (info) => {
+  console.log(`cart BFF listening on http://localhost:${info.port}`);
+});
+```
+
+### 2. `apps/cart/vite.config.ts`
+
+Svelte + Vite app ธรรมดาไปก่อน dev server บน **5002** พร้อม `/api` proxy ไปที่ BFF เพื่อให้ browser คุยกับ origin เดียวเท่านั้นตอน development federation config มาในบทถัดไป
+
+```ts
+import { defineConfig } from 'vite';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+
+export default defineConfig({
+  plugins: [svelte()],
+  server: {
+    port: 5002,
+    proxy: {
+      '/api': 'http://localhost:4002',
+    },
+  },
+});
+```
+
+### 3. `apps/cart/src/cart-store.svelte.ts`
+
+runes ทำงานใน `.svelte.ts` module ได้ด้วย ดังนั้น cart state กับการเรียก BFF ของมันอยู่ที่เดียวกัน — store เล็ก ๆ ที่ UI แค่อ่าน `$state` ทำให้ object reactive ลึก ทุกไฟล์ `.svelte` ที่อ่าน `store.items` จะ re-render เมื่อมันเปลี่ยน
+
+```ts
+type CartItem = {
+  id: string;
+  productId: string;
+  name: string;
+  priceCents: number;
+  qty: number;
+};
+
+type Cart = { items: CartItem[]; totalCents: number };
+
+export function createCartStore() {
+  let cart = $state<Cart>({ items: [], totalCents: 0 });
+  let loading = $state(false);
+
+  async function refresh() {
+    loading = true;
+    const res = await fetch('/api/cart');
+    cart = await res.json();
+    loading = false;
+  }
+
+  async function add(item: { productId: string; name: string; priceCents: number }) {
+    await fetch('/api/cart/items', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...item, qty: 1 }),
+    });
+    await refresh();
+  }
+
+  async function remove(id: string) {
+    await fetch(`/api/cart/items/${id}`, { method: 'DELETE' });
+    await refresh();
+  }
+
+  return {
+    get items() { return cart.items; },
+    get totalCents() { return cart.totalCents; },
+    get loading() { return loading; },
+    refresh,
+    add,
+    remove,
+  };
+}
+```
+
+### 4. `apps/cart/src/Cart.svelte`
+
+UI `$effect` โหลด cart ตอน mount ที่เหลือเป็น Svelte 5 markup ธรรมดา เรา render ราคาด้วย design-system `<m-price>` primitive จาก [Module 5](/mosaic/th/web-components/) — Web Component ที่ทำงานเหมือนกันเป๊ะทั้งใน Svelte และ React
+
+```svelte
+<script lang="ts">
+  import { createCartStore } from './cart-store.svelte';
+
+  const store = createCartStore();
+
+  // Load once when the component mounts.
+  $effect(() => {
+    store.refresh();
+  });
+</script>
+
+<section class="cart">
+  <h2>Your cart</h2>
+
+  {#if store.loading && store.items.length === 0}
+    <p>Loading…</p>
+  {:else if store.items.length === 0}
+    <p>Your cart is empty.</p>
+  {:else}
+    <ul>
+      {#each store.items as item (item.id)}
+        <li>
+          <span>{item.name} × {item.qty}</span>
+          <m-price cents={item.priceCents * item.qty}></m-price>
+          <button onclick={() => store.remove(item.id)}>Remove</button>
+        </li>
+      {/each}
+    </ul>
+    <p class="total">
+      Total: <m-price cents={store.totalCents}></m-price>
+    </p>
+  {/if}
+</section>
+```
+
+### 5. `apps/cart/src/main.ts`
+
+standalone dev entry เพื่อให้คุณรัน cart แยกเดี่ยวได้ ในบทถัดไปเราเพิ่ม entry *ตัวที่สอง* — custom-element registrar ที่ shell consume — โดยไม่แตะตัวนี้
+
+```ts
+import { mount } from 'svelte';
+import Cart from './Cart.svelte';
+
+mount(Cart, { target: document.getElementById('app')! });
+```
+
+## Verify
+
+รัน BFF กับ remote ในสอง terminal (`pnpm --filter cart` เล็งไปที่ slice นี้):
+
+```bash
+# terminal 1 — the BFF
+pnpm --filter cart exec tsx bff/server.ts
+# → cart BFF listening on http://localhost:4002
+
+# terminal 2 — the Svelte app
+pnpm --filter cart dev
+# → Local: http://localhost:5002/
+```
+
+ยิง BFF ตรง ๆ เพื่อยืนยันว่า vertical slice ทำงานจบครบวงจร:
+
+```bash
+curl http://localhost:4002/api/cart
+# → {"items":[],"totalCents":0}
+
+curl -X POST http://localhost:4002/api/cart/items \
+  -H 'content-type: application/json' \
+  -d '{"productId":"p1","name":"Mosaic Mug","priceCents":1299}'
+# → {"ok":true}
+
+curl http://localhost:4002/api/cart
+# → {"items":[{"id":"…","productId":"p1","name":"Mosaic Mug","priceCents":1299,"qty":1}],"totalCents":1299}
+```
+
+ตอนนี้เปิด `http://localhost:5002/` — mug ที่คุณเพิ่งเพิ่มโชว์อยู่ใน cart มีราคาผ่าน `<m-price>` พร้อมปุ่ม **Remove** ที่ใช้งานได้ สุดท้าย ยืนยันว่ามัน build ผ่าน:
+
+```bash
+pnpm --filter cart build
+# → ✓ built in …ms
+```
+
+**ตรวจสอบความเข้าใจ:**
+
+1. shell เป็น React และ cart เป็น Svelte ทางเลือกทางสถาปัตยกรรมข้อเดียวข้อไหนที่ทำให้ทั้งคู่อยู่ร่วมกันได้โดยไม่ต้อง import framework ของอีกฝ่าย?
+2. ทำไม cart BFF ถึงเก็บ *copy* ของชื่อและราคาของแต่ละ product แทนที่จะ query catalog เอา?
+3. runes อย่าง `$state` อยู่ใน `cart-store.svelte.ts` ไม่ใช่ component `.svelte` ทำไมถึงต้องมีนามสกุล `.svelte.ts` เพื่อให้มันทำงาน?
+4. Vite dev server proxy `/api` ไปที่ port 4002 มันแก้ปัญหาอะไรเทียบกับให้ browser เรียก `http://localhost:4002` ตรง ๆ?
+
+## Recap
+
+cart เป็น vertical slice เต็มรูปแบบใน framework ที่สอง: Svelte 5 runes UI ที่มี Hono BFF ของตัวเองหนุนหลัง รันอิสระบน port 5002 และ 4002 มันทำงานด้วยตัวเองได้ — แต่ shell ยัง mount มันไม่ได้ เพราะ React `import` Svelte component ไม่ได้
+
+นั่นคือปัญหา boundary เป๊ะ ๆ ที่ [Module 5](/mosaic/th/web-components/) วางไว้ ต่อไปเราข้ามมัน: [Mount via web component →](/mosaic/th/cart/mount-via-web-component/) wrap Svelte app นี้เป็น `<cart-app>` custom element แล้วให้ React shell render มัน

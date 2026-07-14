@@ -1,0 +1,265 @@
+---
+title: The Svelte remote
+description: "Build the cart as a Svelte 5 remote with runes UI and its own Hono BFF on port 4002 — a full vertical slice in a second framework."
+sidebar:
+  order: 1
+---
+
+## What we're building
+
+The catalog proved the pattern: a remote that owns its UI **and** its data, mounted in the shell at runtime. Now we build the second slice — the **cart** — in a *different framework*, [Svelte 5](https://svelte.dev/). This is the moment the architecture earns its keep: the shell is React, the cart is Svelte, and neither one has to know or care.
+
+This lesson builds the cart as a standalone Svelte app first — its UI in runes, its Hono BFF on port **4002** — running end to end on its own. The next lesson, [Mount via web component →](/mosaic/en/cart/mount-via-web-component/), wraps it as a custom element so the React shell can mount it.
+
+By the end you'll have:
+
+- `apps/cart/bff` — a Hono BFF exposing `GET /api/cart`, `POST /api/cart/items`, `DELETE /api/cart/items/:id`.
+- `apps/cart` — a Svelte 5 Vite app (port 5002) that reads and mutates the cart through that BFF.
+
+## Why
+
+We could have built the cart in React and kept everything uniform. We deliberately didn't. The whole promise of micro-frontends is **independent tech** — a team picks the framework that fits their problem, and the composition still holds. If Mosaic were all-React, "multi-framework" would be a claim we never tested. Svelte here is the proof.
+
+Svelte 5 is a good foil for React specifically because it's *different where it counts*: no virtual DOM, compile-time reactivity, and the new [runes](https://svelte.dev/docs/svelte/what-are-runes) API (`$state`, `$derived`, `$effect`) instead of hooks. If the boundary between shell and remote can absorb that difference cleanly, it can absorb almost anything — and the boundary is a Web Component, which we build next lesson.
+
+The cart still follows the same **vertical slice** rule as the catalog: its own BFF, its own data, deployable on its own. Nothing about being Svelte changes that contract.
+
+## Pros & cons
+
+**A second framework (Svelte) vs. keeping everything React**
+
+- **Pros:** Proves the composition is genuinely framework-agnostic; lets each team optimise for its own problem; Svelte's compiled output is small and fast, which suits a self-contained widget like a cart.
+- **Cons:** Two mental models and two toolchains for the team to hold; no shared React singleton means the Svelte bundle ships its own runtime (small, but not zero); the mount boundary needs a framework-neutral contract (the reason the next lesson exists).
+
+**A dedicated cart BFF vs. one shared backend for the whole store**
+
+- **Pros:** The cart owns its data and its endpoints, so it deploys as a unit; no cross-team coupling on a shared API; you can reason about cart state in isolation.
+- **Cons:** State that spans slices (a product's price lives in catalog, the cart stores a copy) must be passed across the boundary, not queried; more small services to run in dev.
+
+## Set it up
+
+### 1. `apps/cart/bff/server.ts`
+
+The BFF keeps an in-memory cart keyed by process (a single mock session for the course). It mirrors the exact endpoints from the build contract.
+
+```ts
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { serve } from '@hono/node-server';
+
+type CartItem = {
+  id: string;
+  productId: string;
+  name: string;
+  priceCents: number;
+  qty: number;
+};
+
+// In-memory cart for a single mock session. Real apps key this by session id.
+const cart = new Map<string, CartItem>();
+
+const app = new Hono();
+
+// The remote (5002) and the shell (5000) both call this BFF from the browser.
+app.use('/api/*', cors({ origin: ['http://localhost:5002', 'http://localhost:5000'] }));
+
+app.get('/api/cart', (c) => {
+  const items = [...cart.values()];
+  const totalCents = items.reduce((sum, i) => sum + i.priceCents * i.qty, 0);
+  return c.json({ items, totalCents });
+});
+
+// Body mirrors the `cart:add` bus payload we wire up in Module 8:
+// { productId, name, priceCents, qty? }. The cart stores its own copy of the
+// product details rather than querying catalog across the slice boundary.
+app.post('/api/cart/items', async (c) => {
+  const { productId, name, priceCents, qty = 1 } = await c.req.json();
+  const existing = [...cart.values()].find((i) => i.productId === productId);
+  if (existing) {
+    existing.qty += qty;
+  } else {
+    const id = crypto.randomUUID();
+    cart.set(id, { id, productId, name, priceCents, qty });
+  }
+  return c.json({ ok: true }, 201);
+});
+
+app.delete('/api/cart/items/:id', (c) => {
+  cart.delete(c.req.param('id'));
+  return c.json({ ok: true });
+});
+
+serve({ fetch: app.fetch, port: 4002 }, (info) => {
+  console.log(`cart BFF listening on http://localhost:${info.port}`);
+});
+```
+
+### 2. `apps/cart/vite.config.ts`
+
+A plain Svelte + Vite app for now. Dev server on **5002**, with `/api` proxied to the BFF so the browser only ever talks to one origin in development. Federation config comes in the next lesson.
+
+```ts
+import { defineConfig } from 'vite';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+
+export default defineConfig({
+  plugins: [svelte()],
+  server: {
+    port: 5002,
+    proxy: {
+      '/api': 'http://localhost:4002',
+    },
+  },
+});
+```
+
+### 3. `apps/cart/src/cart-store.svelte.ts`
+
+Runes work in `.svelte.ts` modules too, so the cart state and its BFF calls live in one place — a small store the UI just reads. `$state` makes the object deeply reactive; any `.svelte` file that reads `store.items` re-renders when it changes.
+
+```ts
+type CartItem = {
+  id: string;
+  productId: string;
+  name: string;
+  priceCents: number;
+  qty: number;
+};
+
+type Cart = { items: CartItem[]; totalCents: number };
+
+export function createCartStore() {
+  let cart = $state<Cart>({ items: [], totalCents: 0 });
+  let loading = $state(false);
+
+  async function refresh() {
+    loading = true;
+    const res = await fetch('/api/cart');
+    cart = await res.json();
+    loading = false;
+  }
+
+  async function add(item: { productId: string; name: string; priceCents: number }) {
+    await fetch('/api/cart/items', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...item, qty: 1 }),
+    });
+    await refresh();
+  }
+
+  async function remove(id: string) {
+    await fetch(`/api/cart/items/${id}`, { method: 'DELETE' });
+    await refresh();
+  }
+
+  return {
+    get items() { return cart.items; },
+    get totalCents() { return cart.totalCents; },
+    get loading() { return loading; },
+    refresh,
+    add,
+    remove,
+  };
+}
+```
+
+### 4. `apps/cart/src/Cart.svelte`
+
+The UI. `$effect` loads the cart on mount; the rest is plain Svelte 5 markup. We render prices with the design-system `<m-price>` primitive from [Module 5](/mosaic/en/web-components/) — a Web Component, so it works identically in Svelte and React.
+
+```svelte
+<script lang="ts">
+  import { createCartStore } from './cart-store.svelte';
+
+  const store = createCartStore();
+
+  // Load once when the component mounts.
+  $effect(() => {
+    store.refresh();
+  });
+</script>
+
+<section class="cart">
+  <h2>Your cart</h2>
+
+  {#if store.loading && store.items.length === 0}
+    <p>Loading…</p>
+  {:else if store.items.length === 0}
+    <p>Your cart is empty.</p>
+  {:else}
+    <ul>
+      {#each store.items as item (item.id)}
+        <li>
+          <span>{item.name} × {item.qty}</span>
+          <m-price cents={item.priceCents * item.qty}></m-price>
+          <button onclick={() => store.remove(item.id)}>Remove</button>
+        </li>
+      {/each}
+    </ul>
+    <p class="total">
+      Total: <m-price cents={store.totalCents}></m-price>
+    </p>
+  {/if}
+</section>
+```
+
+### 5. `apps/cart/src/main.ts`
+
+A standalone dev entry so you can run the cart on its own. In the next lesson we add a *second* entry — the custom-element registrar the shell consumes — without touching this one.
+
+```ts
+import { mount } from 'svelte';
+import Cart from './Cart.svelte';
+
+mount(Cart, { target: document.getElementById('app')! });
+```
+
+## Verify
+
+Run the BFF and the remote in two terminals (`pnpm --filter cart` targets this slice):
+
+```bash
+# terminal 1 — the BFF
+pnpm --filter cart exec tsx bff/server.ts
+# → cart BFF listening on http://localhost:4002
+
+# terminal 2 — the Svelte app
+pnpm --filter cart dev
+# → Local: http://localhost:5002/
+```
+
+Exercise the BFF directly to confirm the vertical slice works end to end:
+
+```bash
+curl http://localhost:4002/api/cart
+# → {"items":[],"totalCents":0}
+
+curl -X POST http://localhost:4002/api/cart/items \
+  -H 'content-type: application/json' \
+  -d '{"productId":"p1","name":"Mosaic Mug","priceCents":1299}'
+# → {"ok":true}
+
+curl http://localhost:4002/api/cart
+# → {"items":[{"id":"…","productId":"p1","name":"Mosaic Mug","priceCents":1299,"qty":1}],"totalCents":1299}
+```
+
+Now open `http://localhost:5002/` — the mug you just added shows in the cart, priced via `<m-price>`, with a working **Remove** button. Finally, confirm it builds:
+
+```bash
+pnpm --filter cart build
+# → ✓ built in …ms
+```
+
+**Check your understanding:**
+
+1. The shell is React and the cart is Svelte. What single architectural choice lets them coexist without either importing the other's framework?
+2. Why does the cart BFF store a *copy* of each product's name and price instead of querying the catalog for them?
+3. Runes like `$state` live in `cart-store.svelte.ts`, not a `.svelte` component. Why is the `.svelte.ts` extension required for that to work?
+4. The Vite dev server proxies `/api` to port 4002. What problem does that solve compared to the browser calling `http://localhost:4002` directly?
+
+## Recap
+
+The cart is a full vertical slice in a second framework: a Svelte 5 runes UI backed by its own Hono BFF, running independently on ports 5002 and 4002. It works on its own — but the shell can't mount it yet, because React can't `import` a Svelte component.
+
+That's exactly the boundary problem [Module 5](/mosaic/en/web-components/) set up. Next we cross it: [Mount via web component →](/mosaic/en/cart/mount-via-web-component/) wraps this Svelte app as a `<cart-app>` custom element and has the React shell render it.
