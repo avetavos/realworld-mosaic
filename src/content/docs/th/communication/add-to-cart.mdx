@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
 ผลตอบแทนของ event bus: flow "add to cart" จริงที่ข้าม micro-frontend สามตัวซึ่ง deploy อิสระใน setup สามแบบ โดย **ไม่มี remote ไหน import อีกตัว**
 
@@ -21,15 +21,15 @@ flowchart LR
     Bus -->|"on cart:changed"| Badge
 ```
 
-[React catalog](/mosaic/th/catalog/the-catalog-remote/) emit `cart:add` เมื่อคุณคลิก "Add to cart" [Svelte cart](/mosaic/th/cart/mount-via-web-component/) ได้ยินมัน อัปเดต state ของตัวเอง แล้ว emit `cart:changed` shell ได้ยิน `cart:changed` แล้วอัปเดต badge ใน top-nav สาม hop, bus เดียว, ไม่มี import ข้าม remote เลย
+[React catalog](/mosaic/th/catalog/the-catalog-remote/) emit `cart:add` เมื่อคุณคลิก "Add to cart" [Svelte cart](/mosaic/th/cart/mount-via-web-component/) ได้ยิน event นั้น อัปเดต state ของตัวเอง แล้ว emit `cart:changed` shell ได้ยิน `cart:changed` แล้วอัปเดต badge ใน top-nav สาม hop, bus เดียว, ไม่มี import ข้าม remote เลย
 
-## Why
+## ทำไม
 
-นี่คือช่วงที่ architecture คุ้มกับความซับซ้อนของมัน SPA เดี่ยว ๆ แค่เรียก hook `useCart()` หรืออ่าน shared store — framework เดียว module graph เดียว ง่ายมาก Mosaic ทำแบบนั้นไม่ได้: emitter เป็น React, receiver เป็น Svelte และทั้งคู่ ship แยกกัน สิ่งเดียวที่ทั้งสามใช้ร่วมคือ [`@mosaic/bus`](/mosaic/th/communication/the-event-bus/) และ bus ก็ไม่รู้จักตัวไหนเลย
+นี่คือช่วงที่ architecture คุ้มกับความซับซ้อนที่จ่ายไป SPA เดี่ยว ๆ แค่เรียก hook `useCart()` หรืออ่าน shared store — framework เดียว module graph เดียว ง่ายมาก Mosaic ทำแบบนั้นไม่ได้: emitter เป็น React, receiver เป็น Svelte และทั้งคู่ ship แยกกัน สิ่งเดียวที่ทั้งสามใช้ร่วมคือ [`@mosaic/bus`](/mosaic/th/communication/the-event-bus/) และ bus ก็ไม่รู้จักตัวไหนเลย
 
-สังเกตรูปทรงของ data flow catalog **ไม่ได้** อัปเดต cart ตรง ๆ และ **ไม่ได้** อัปเดต badge — มันประกาศข้อเท็จจริง ("product นี้ถูกเพิ่ม") แล้วหยุด cart เป็นเจ้าของ cart state มันจึงเป็นตัวที่คำนวณ total ใหม่แล้วประกาศ state ใหม่ (`cart:changed`) shell เป็นเจ้าของ badge มันจึงเป็นตัวที่ฟัง `cart:changed` MFE แต่ละตัวเป็นเจ้าของ state slice ของตัวเองและแค่ *broadcast* การเปลี่ยนแปลง วินัยนั้น — เป็นเจ้าของ state ของตัวเอง, emit ข้อเท็จจริง, react ต่อข้อเท็จจริงของคนอื่น — คือสิ่งที่ทำให้รอยต่อ decoupled อยู่ได้เมื่อแอปโตขึ้น
+สังเกตรูปทรงของ data flow catalog **ไม่ได้** อัปเดต cart ตรง ๆ และ **ไม่ได้** อัปเดต badge — แค่ประกาศข้อเท็จจริง ("product นี้ถูกเพิ่ม") แล้วหยุด cart เป็นเจ้าของ cart state จึงเป็นตัวที่คำนวณ total ใหม่แล้วประกาศ state ใหม่ (`cart:changed`) shell เป็นเจ้าของ badge จึงเป็นตัวที่ฟัง `cart:changed` MFE แต่ละตัวเป็นเจ้าของ state slice ของตัวเองและแค่ *broadcast* การเปลี่ยนแปลง วินัยนั้น — เป็นเจ้าของ state ของตัวเอง, emit ข้อเท็จจริง, react ต่อข้อเท็จจริงของคนอื่น — คือสิ่งที่ทำให้รอยต่อ decoupled อยู่ได้เมื่อแอปโตขึ้น
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **Bus events vs. a shared cart store imported by every remote**
 
@@ -38,14 +38,14 @@ flowchart LR
 
 **One-way facts (`cart:add` then a separate `cart:changed`) vs. a request that returns a result**
 
-- **Pros:** emitter ไม่ block หรือรอ และ receiver อิสระที่จะ ignore, batch หรือ debounce cart ยังเป็นเจ้าของความจริงของ cart แต่เพียงผู้เดียว คนอื่น react ต่อสิ่งที่มันประกาศ
-- **Cons:** catalog ไม่ได้ยืนยันตรง ๆ ว่าการ add สำเร็จ — ถ้าอยากได้ feedback (เช่นตัวเลข "1 in cart") มันต้อง *ฟัง* `cart:changed` ด้วย สอง event จำลองหนึ่ง interaction ซึ่งคุณต้องจำไว้ในหัว
+- **Pros:** emitter ไม่ block หรือรอ และ receiver อิสระที่จะ ignore, batch หรือ debounce cart ยังเป็นเจ้าของความจริงของ cart แต่เพียงผู้เดียว คนอื่นแค่ react ต่อสิ่งที่ cart ประกาศ
+- **Cons:** catalog ไม่ได้ยืนยันตรง ๆ ว่าการ add สำเร็จ — ถ้าอยากได้ feedback (เช่นตัวเลข "1 in cart") catalog ต้อง *ฟัง* `cart:changed` ด้วย สอง event จำลองหนึ่ง interaction ซึ่งคุณต้องจำไว้ในหัว
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `apps/catalog/src/ProductCard.tsx`
 
-React catalog emit `cart:add` มัน import bus — ไม่เคย import cart
+React catalog emit `cart:add` โดย import แค่ bus — ไม่เคย import cart
 
 ```tsx
 import { bus } from '@mosaic/bus';
@@ -75,7 +75,7 @@ export function ProductCard({ product }: { product: Product }) {
 
 ### 2. `apps/cart/src/CartApp.svelte`
 
-Svelte cart เป็นเจ้าของ cart state มันฟัง `cart:add` อัปเดต list ของตัวเอง แล้ว emit `cart:changed` พร้อม total ใหม่ Svelte 5 rune (`$state`) ให้ reactivity แบบลึก การ push เข้า array จึงอัปเดต UI `onMount` return unsubscribe ของ bus ไว้ cleanup
+Svelte cart เป็นเจ้าของ cart state จึงฟัง `cart:add` อัปเดต list ของตัวเอง แล้ว emit `cart:changed` พร้อม total ใหม่ Svelte 5 rune (`$state`) ให้ reactivity แบบลึก การ push เข้า array จึงอัปเดต UI `onMount` return unsubscribe ของ bus ไว้ cleanup
 
 ```svelte
 <script lang="ts">
@@ -111,7 +111,7 @@ Svelte cart เป็นเจ้าของ cart state มันฟัง `car
 
 ### 3. `apps/shell/src/CartBadge.tsx`
 
-shell เป็นเจ้าของ badge ใน top-nav มันฟัง `cart:changed` แล้ว render count `useEffect` return unsubscribe ของ `bus.on(...)` ตรง ๆ เป็น cleanup
+shell เป็นเจ้าของ badge ใน top-nav จึงฟัง `cart:changed` แล้ว render count `useEffect` return unsubscribe ของ `bus.on(...)` ตรง ๆ เป็น cleanup
 
 ```tsx
 import { useEffect, useState } from 'react';
@@ -132,7 +132,7 @@ export function CartBadge() {
 
 สามไฟล์ สาม framework และ import ร่วมตัวเดียวในทุกไฟล์คือ `@mosaic/bus`
 
-## Verify
+## ตรวจสอบผล
 
 รัน shell และ remote ทั้งสองพร้อมกัน (แต่ละตัว share bus singleton จาก [บทที่แล้ว](/mosaic/th/communication/the-event-bus/)):
 
@@ -163,9 +163,9 @@ pnpm -r build
 
 1. ทำไม cart — ไม่ใช่ catalog — เป็นตัว emit `cart:changed`? หลักการอะไรตัดสินว่าใคร emit event ไหน?
 2. การ click ที่ catalog ไม่เคยแตะ badge เลย แต่ badge อัปเดต ไล่ตามสอง hop และบอกชื่อ event บนแต่ละ hop
-3. ถ้าคุณอยากให้ปุ่มของ catalog แสดง "1 in cart" หลัง add มันจะ subscribe event ไหน และทำไมมันอ่าน state ของ cart ตรง ๆ ไม่ได้?
-4. อะไรในการต่อสายนี้ที่ยังให้ทีม cart เปลี่ยนวิธีที่ cart เก็บ line ของมันได้ โดยไม่ทำ catalog หรือ shell พัง?
+3. ถ้าคุณอยากให้ปุ่มของ catalog แสดง "1 in cart" หลัง add ปุ่มนั้นต้อง subscribe event ไหน และทำไมอ่าน state ของ cart ตรง ๆ ไม่ได้?
+4. อะไรในการต่อสายนี้ที่ยังให้ทีม cart เปลี่ยนวิธีที่ cart เก็บ line ของตัวเองได้ โดยไม่ทำ catalog หรือ shell พัง?
 
-## Recap
+## สรุป
 
 คุณต่อ "add to cart" ข้าม framework แบบเต็ม: React catalog emit `cart:add`, Svelte cart อัปเดตแล้ว emit `cart:changed`, และ badge ของ shell react — โดยไม่มี remote ไหน import อีกตัว มีแค่ `@mosaic/bus` คั่นกลาง MFE แต่ละตัวเป็นเจ้าของ state ของตัวเองและ broadcast ข้อเท็จจริง ต่อไปเอาการ decouple แบบเดียวกันไปใช้กับ identity: [Shared Auth & State →](/mosaic/th/auth-state/) ให้ทุก remote มี session เดียวโดยไม่ผูกกันแน่น

@@ -5,21 +5,21 @@ sidebar:
   order: 2
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
-ผลตอบแทนที่สถาปัตยกรรมทั้งหมดสร้างมาเพื่อไปให้ถึง: การ ship version ใหม่ของ *หนึ่ง* remote แบบ live โดยไม่ต้อง rebuild หรือ redeploy shell หรือ remote ตัวอื่นใด เราจะ version `remoteEntry` ของ catalog, roll out มัน, และดู shell หยิบมันไปใช้ตอนผู้เข้าชมโหลดหน้าครั้งถัดไป — คำสัญญา "ship ทีมเดียว" ที่พิสูจน์ตั้งแต่ต้นจนจบ
+ผลตอบแทนที่สถาปัตยกรรมทั้งหมดสร้างมาเพื่อไปให้ถึง: การ ship version ใหม่ของ *หนึ่ง* remote แบบ live โดยไม่ต้อง rebuild หรือ redeploy shell หรือ remote ตัวอื่นใด เราจะ version `remoteEntry` ของ catalog, roll out, และดู shell หยิบไปใช้ตอนผู้เข้าชมโหลดหน้าครั้งถัดไป — คำสัญญา "ship ทีมเดียว" ที่พิสูจน์ตั้งแต่ต้นจนจบ
 
-## Why
+## ทำไม
 
-เพราะ shell [โหลด remote ตอน runtime จาก URL ของ `remoteEntry`](/mosaic/th/federation/) version ของ remote จึงอยู่ที่ฝั่งของ remote ทั้งหมด เมื่อ [catalog team deploy](/mosaic/th/deployment/deploy-each-slice/) build ใหม่ พวกเขา publish `remoteEntry.js` ใหม่ที่ URL คงที่ที่ shell รู้จักอยู่แล้ว shell ไม่ได้ import catalog ตอน build ดังนั้นมันไม่มีอะไรต้อง rebuild — *ครั้งถัดไป* ที่ browser โหลด shell มันจะ fetch `remoteEntry.js` ปัจจุบันแล้วได้ catalog ใหม่ นั่นคือ release train ที่ถูกแยกออกจากกัน: catalog team ship ตามตารางของตัวเอง, cart team ไม่รู้สึกอะไรเลย, shell ไม่ถูกแตะ
+เพราะ shell [โหลด remote ตอน runtime จาก URL ของ `remoteEntry`](/mosaic/th/federation/) version ของ remote จึงอยู่ที่ฝั่งของ remote ทั้งหมด เมื่อ [catalog team deploy](/mosaic/th/deployment/deploy-each-slice/) build ใหม่ พวกเขา publish `remoteEntry.js` ใหม่ที่ URL คงที่ที่ shell รู้จักอยู่แล้ว shell ไม่ได้ import catalog ตอน build จึงไม่มีอะไรต้อง rebuild — *ครั้งถัดไป* ที่ browser โหลด shell ก็จะ fetch `remoteEntry.js` ปัจจุบันแล้วได้ catalog ใหม่ นั่นคือ release train ที่ถูกแยกออกจากกัน: catalog team ship ตามตารางของตัวเอง, cart team ไม่รู้สึกอะไรเลย, shell ไม่ถูกแตะ
 
 รายละเอียดที่ทำให้สิ่งนี้ปลอดภัย:
 
-- **Cache-busting the entry.** `remoteEntry.js` คือ manifest ที่ shell อ่านเพื่อหา chunk ปัจจุบัน; มันต้องถูก serve ด้วย header แบบ short/no-cache เพื่อให้ deploy ใหม่ถูกเห็นทันที ขณะที่ *content* chunk ที่มันชี้ไปเป็น immutable และ hash ไว้เพื่อ cache lifetime ที่ยาว ทำกลับกันแล้วผู้เข้าชมจะโหลด catalog ตัวเก่าจาก cache ต่อไปเรื่อย ๆ
+- **Cache-busting the entry.** `remoteEntry.js` คือ manifest ที่ shell อ่านเพื่อหา chunk ปัจจุบัน; จึงต้อง serve ด้วย header แบบ short/no-cache เพื่อให้เห็น deploy ใหม่ทันที ขณะที่ *content* chunk ที่ entry ชี้ไปเป็น immutable และ hash ไว้เพื่อ cache lifetime ที่ยาว ทำกลับกันแล้วผู้เข้าชมจะโหลด catalog ตัวเก่าจาก cache ต่อไปเรื่อย ๆ
 - **Shared-version compatibility.** catalog ตัวใหม่ยังประกาศ `react` เป็น `singleton` พร้อม `requiredVersion` Module Federation เจรจา version ตอนโหลด: ถ้า catalog ใหม่ต้องการ React ที่ shell ให้ไม่ได้ runtime จะ warn แทนที่จะ render กับ React สองตัวเงียบ ๆ การ version *code ของ remote เอง* นั้นฟรี; การเปลี่ยน *shared* major คือกรณีที่ต้องประสานงาน
 - **A manifest for provenance.** เปิด `manifest: true` จะ emit `mf-manifest.json` ไว้ข้าง ๆ `remoteEntry.js` และ `additionalData` hook stamp build id หรือ git SHA เข้าไปในนั้นได้ — เพื่อให้คุณบอกได้ว่า catalog version *ไหน* ที่ live อยู่โดยไม่ต้องเดา
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **Runtime rollout (new remoteEntry) vs. rebuilding the shell to adopt a remote change**
 
@@ -31,7 +31,7 @@ sidebar:
 - **Pros (split caching):** deploy ใหม่ถูกหยิบไปใช้เร็ว (entry สด) ขณะที่ chunk cache ราคาถูกได้ตลอดกาล (content-hashed) ได้ทั้งสองอย่าง
 - **Cons (split caching):** มีสอง cache policy ให้ config ให้ถูกต่อ host; `remoteEntry.js` cache ที่ config ผิดคือ bug คลาสสิก "ทำไม version เก่ายัง live อยู่"
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `apps/catalog/vite.config.ts`
 
@@ -74,7 +74,7 @@ federation({
 
 ### 3. Ship a new catalog version
 
-เปลี่ยนแค่ catalog, build ด้วย build id สด, deploy asset ของมัน ไม่มีอะไรของ shell หรือ cart ถูกแตะ
+เปลี่ยนแค่ catalog, build ด้วย build id สด, deploy asset ของ catalog ไม่มีอะไรของ shell หรือ cart ถูกแตะ
 
 ```bash
 # Make a catalog-only change (e.g. tweak the product grid), then:
@@ -89,7 +89,7 @@ pnpm dlx wrangler pages deploy apps/catalog/dist --project-name mosaic-catalog
 
 ### 4. (Optional) Runtime remote registration
 
-ถ้าคุณอยากเลือก URL ของ remote — หรือ pin path ที่ version ไว้อย่าง `/v2/remoteEntry.js` — ทั้งหมดตอน runtime แทนที่จะตอน shell build ให้ register มันด้วย runtime API สิ่งนี้ทำให้ shell adopt remote ใหม่หรือ canary URL ได้โดยไม่ต้อง rebuild เลย
+ถ้าคุณอยากเลือก URL ของ remote — หรือ pin path ที่ version ไว้อย่าง `/v2/remoteEntry.js` — ทั้งหมดตอน runtime แทนที่จะตอน shell build ให้ register ด้วย runtime API ทำให้ shell adopt remote ใหม่หรือ canary URL ได้โดยไม่ต้อง rebuild เลย
 
 ```ts
 import { registerRemotes, loadRemote } from '@module-federation/runtime';
@@ -106,7 +106,7 @@ registerRemotes([
 const { default: Catalog } = await loadRemote('catalog/Catalog');
 ```
 
-## Verify
+## ตรวจสอบผล
 
 พิสูจน์ว่า rollout ไปถึงผู้เข้าชมและ shell ไม่เคยถูก rebuild
 
@@ -133,17 +133,17 @@ pnpm dlx wrangler pages deployment list --project-name mosaic-shell | head -3
 # The shell's latest deployment timestamp is OLDER than the catalog's — proof.
 ```
 
-คุณ ship ทีมเดียวได้โดยไม่ต้อง rebuild ตัวอื่น คุณสมบัติเดียวนั้นคือสิ่งที่ดีไซน์ shell-loads-remotes-at-runtime, Web-Component boundary, per-remote BFF, และ event bus ที่ decouple กัน ทั้งหมดมีอยู่เพื่อทำให้มันปลอดภัย
+คุณ ship ทีมเดียวได้โดยไม่ต้อง rebuild ตัวอื่น คุณสมบัติเดียวนั้นคือสิ่งที่ดีไซน์ shell-loads-remotes-at-runtime, Web-Component boundary, per-remote BFF, และ event bus ที่ decouple กัน ทั้งหมดมีอยู่เพื่อทำให้เรื่องนี้ปลอดภัย
 
 ตรวจสอบความเข้าใจ:
 
 1. เมื่อ catalog team deploy build ใหม่ shell ต้อง rebuild อะไร — และทำไมคำตอบถึงเป็น "ไม่มีอะไรเลย"?
 2. ทำไม `remoteEntry.js` ต้องมี header `no-cache` ขณะที่ hashed `/assets/*` chunk cache ได้เป็นปี?
-3. การ version *code ของ remote เอง* นั้นฟรี แต่การเปลี่ยน major ของ *shared* dependency ไม่ฟรี Module Federation ทำอะไรตอนโหลดเพื่อรักษาความปลอดภัยตรงนั้น และมันมีต้นทุนอะไรเทียบกับ single-build monolith?
+3. การ version *code ของ remote เอง* นั้นฟรี แต่การเปลี่ยน major ของ *shared* dependency ไม่ฟรี Module Federation ทำอะไรตอนโหลดเพื่อรักษาความปลอดภัยตรงนั้น และมีต้นทุนอะไรเทียบกับ single-build monolith?
 4. `registerRemotes()` ตอน runtime ให้คุณทำอะไรได้ที่การตั้ง `entry` ใน `vite.config.ts` ของ shell ทำไม่ได้?
 
-## Recap
+## สรุป
 
-คุณ version remote แล้ว roll out มัน: `remoteEntry.js` ใหม่ที่ publish ที่ URL คงที่, ถูก shell หยิบไปใช้ตอนโหลดครั้งถัดไป, พร้อม manifest ที่ stamp ไว้เพื่อพิสูจน์ว่า build ไหน live — และ shell กับ cart ไม่เคย rebuild นั่นคือผลตอบแทน "ship ทีมเดียว" ที่พิสูจน์ตั้งแต่ต้นจนจบ พร้อมรายละเอียดเรื่อง cache และ shared-version ที่รักษาความปลอดภัย
+คุณ version remote แล้ว roll out จริง: `remoteEntry.js` ใหม่ที่ publish ที่ URL คงที่, ถูก shell หยิบไปใช้ตอนโหลดครั้งถัดไป, พร้อม manifest ที่ stamp ไว้เพื่อพิสูจน์ว่า build ไหน live — และ shell กับ cart ไม่เคย rebuild นั่นคือผลตอบแทน "ship ทีมเดียว" ที่พิสูจน์ตั้งแต่ต้นจนจบ พร้อมรายละเอียดเรื่อง cache และ shared-version ที่รักษาความปลอดภัย
 
 ตอนนี้คุณ build Mosaic จาก repo เปล่ามาจนถึง slice ที่ deploy อิสระ, version อิสระ, compose ตอน runtime แล้ว ถึงเวลาถอยออกมามองแล้วเรียกชื่อสิ่งที่คุณได้เรียนรู้: [Wrap-up →](/mosaic/th/wrap-up/)

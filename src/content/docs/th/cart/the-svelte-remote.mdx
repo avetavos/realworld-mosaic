@@ -5,26 +5,26 @@ sidebar:
   order: 1
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
-catalog พิสูจน์ pattern แล้ว: remote ที่เป็นเจ้าของทั้ง UI **และ** data ของมัน mount ใน shell ตอน runtime ตอนนี้เราสร้าง slice ที่สอง — **cart** — ใน *framework คนละตัว* คือ [Svelte 5](https://svelte.dev/) นี่คือจังหวะที่ architecture พิสูจน์คุณค่าตัวเอง: shell เป็น React, cart เป็น Svelte, และไม่มีฝ่ายไหนต้องรู้หรือสน
+catalog พิสูจน์ pattern แล้ว: remote ที่เป็นเจ้าของทั้ง UI **และ** data ของตัวเอง mount ใน shell ตอน runtime ตอนนี้เราสร้าง slice ที่สอง — **cart** — ใน *framework คนละตัว* คือ [Svelte 5](https://svelte.dev/) นี่คือจังหวะที่ architecture พิสูจน์คุณค่าตัวเอง: shell เป็น React, cart เป็น Svelte, และไม่มีฝ่ายไหนต้องรู้หรือสน
 
-บทนี้สร้าง cart เป็น standalone Svelte app ก่อน — UI เป็น runes, Hono BFF บน port **4002** — รันจบครบวงจรด้วยตัวเอง บทถัดไป [Mount via web component →](/mosaic/th/cart/mount-via-web-component/) จะ wrap มันเป็น custom element เพื่อให้ React shell mount มันได้
+บทนี้สร้าง cart เป็น standalone Svelte app ก่อน — UI เป็น runes, Hono BFF บน port **4002** — รันจบครบวงจรด้วยตัวเอง บทถัดไป [Mount via web component →](/mosaic/th/cart/mount-via-web-component/) จะ wrap เป็น custom element เพื่อให้ React shell mount ได้
 
 พอจบคุณจะมี:
 
 - `apps/cart/bff` — Hono BFF ที่ expose `GET /api/cart`, `POST /api/cart/items`, `DELETE /api/cart/items/:id`
 - `apps/cart` — Svelte 5 Vite app (port 5002) ที่อ่านและแก้ cart ผ่าน BFF นั้น
 
-## Why
+## ทำไม
 
-เราจะสร้าง cart ใน React แล้วให้ทุกอย่างเป็นแบบเดียวกันหมดก็ได้ แต่เราจงใจไม่ทำ คำสัญญาทั้งหมดของ micro-frontend คือ **tech ที่อิสระ** — ทีมเลือก framework ที่เหมาะกับปัญหาของมัน แล้วการประกอบยังยึดอยู่ ถ้า Mosaic เป็น React ทั้งหมด "multi-framework" ก็จะเป็นคำอ้างที่เราไม่เคยทดสอบ Svelte ตรงนี้คือหลักฐาน
+เราจะสร้าง cart ใน React แล้วให้ทุกอย่างเป็นแบบเดียวกันหมดก็ได้ แต่เราจงใจไม่ทำ คำสัญญาทั้งหมดของ micro-frontend คือ **tech ที่อิสระ** — ทีมเลือก framework ที่เหมาะกับปัญหาของตัวเอง แล้วการประกอบยังยึดอยู่ ถ้า Mosaic เป็น React ทั้งหมด "multi-framework" ก็จะเป็นคำอ้างที่เราไม่เคยทดสอบ Svelte ตรงนี้คือหลักฐาน
 
-Svelte 5 เป็นตัวเทียบที่ดีกับ React โดยเฉพาะเพราะมัน *ต่างในจุดที่สำคัญ*: ไม่มี virtual DOM, reactivity ตอน compile-time, และ [runes](https://svelte.dev/docs/svelte/what-are-runes) API ใหม่ (`$state`, `$derived`, `$effect`) แทน hooks ถ้า boundary ระหว่าง shell กับ remote ดูดซับความต่างนั้นได้อย่างสะอาด มันก็ดูดซับอะไรก็ได้เกือบทั้งหมด — และ boundary นั้นคือ Web Component ที่เราสร้างในบทถัดไป
+Svelte 5 เป็นตัวเทียบที่ดีกับ React โดยเฉพาะเพราะ *ต่างในจุดที่สำคัญ*: ไม่มี virtual DOM, reactivity ตอน compile-time, และ [runes](https://svelte.dev/docs/svelte/what-are-runes) API ใหม่ (`$state`, `$derived`, `$effect`) แทน hooks ถ้า boundary ระหว่าง shell กับ remote ดูดซับความต่างนั้นได้อย่างสะอาด ก็ดูดซับอะไรก็ได้เกือบทั้งหมด — และ boundary นั้นคือ Web Component ที่เราสร้างในบทถัดไป
 
-cart ยังทำตามกฎ **vertical slice** เดียวกับ catalog: BFF ของตัวเอง, data ของตัวเอง, deploy เองได้ การที่มันเป็น Svelte ไม่เปลี่ยน contract นั้นเลย
+cart ยังทำตามกฎ **vertical slice** เดียวกับ catalog: BFF ของตัวเอง, data ของตัวเอง, deploy เองได้ การเป็น Svelte ไม่เปลี่ยน contract นั้นเลย
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **A second framework (Svelte) vs. keeping everything React**
 
@@ -33,14 +33,14 @@ cart ยังทำตามกฎ **vertical slice** เดียวกับ 
 
 **A dedicated cart BFF vs. one shared backend for the whole store**
 
-- **Pros:** cart เป็นเจ้าของ data และ endpoint ของมัน จึง deploy เป็นหน่วยเดียว ไม่มี coupling ข้ามทีมบน API ที่ share กัน คุณ reason เรื่อง cart state แบบแยกเดี่ยวได้
+- **Pros:** cart เป็นเจ้าของ data และ endpoint ของตัวเอง จึง deploy เป็นหน่วยเดียว ไม่มี coupling ข้ามทีมบน API ที่ share กัน คุณ reason เรื่อง cart state แบบแยกเดี่ยวได้
 - **Cons:** state ที่พาดข้าม slice (ราคาของ product อยู่ใน catalog แต่ cart เก็บ copy ไว้) ต้องถูกส่งข้าม boundary ไม่ใช่ query เอา มี service เล็ก ๆ ให้รันใน dev มากขึ้น
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `apps/cart/bff/server.ts`
 
-BFF เก็บ cart ใน memory ที่ key ด้วย process (mock session เดียวสำหรับคอร์สนี้) มันสะท้อน endpoint เป๊ะ ๆ ตาม build contract
+BFF เก็บ cart ใน memory ที่ key ด้วย process (mock session เดียวสำหรับคอร์สนี้) สะท้อน endpoint เป๊ะ ๆ ตาม build contract
 
 ```ts
 import { Hono } from 'hono';
@@ -115,7 +115,7 @@ export default defineConfig({
 
 ### 3. `apps/cart/src/cart-store.svelte.ts`
 
-runes ทำงานใน `.svelte.ts` module ได้ด้วย ดังนั้น cart state กับการเรียก BFF ของมันอยู่ที่เดียวกัน — store เล็ก ๆ ที่ UI แค่อ่าน `$state` ทำให้ object reactive ลึก ทุกไฟล์ `.svelte` ที่อ่าน `store.items` จะ re-render เมื่อมันเปลี่ยน
+runes ทำงานใน `.svelte.ts` module ได้ด้วย ดังนั้น cart state กับการเรียก BFF ของตัวเองอยู่ที่เดียวกัน — store เล็ก ๆ ที่ UI แค่อ่าน `$state` ทำให้ object reactive ลึก ทุกไฟล์ `.svelte` ที่อ่าน `store.items` จะ re-render เมื่อค่าเปลี่ยน
 
 ```ts
 type CartItem = {
@@ -215,7 +215,7 @@ import Cart from './Cart.svelte';
 mount(Cart, { target: document.getElementById('app')! });
 ```
 
-## Verify
+## ตรวจสอบผล
 
 รัน BFF กับ remote ในสอง terminal (`pnpm --filter cart` เล็งไปที่ slice นี้):
 
@@ -244,7 +244,7 @@ curl http://localhost:4002/api/cart
 # → {"items":[{"id":"…","productId":"p1","name":"Mosaic Mug","priceCents":1299,"qty":1}],"totalCents":1299}
 ```
 
-ตอนนี้เปิด `http://localhost:5002/` — mug ที่คุณเพิ่งเพิ่มโชว์อยู่ใน cart มีราคาผ่าน `<m-price>` พร้อมปุ่ม **Remove** ที่ใช้งานได้ สุดท้าย ยืนยันว่ามัน build ผ่าน:
+ตอนนี้เปิด `http://localhost:5002/` — mug ที่คุณเพิ่งเพิ่มโชว์อยู่ใน cart มีราคาผ่าน `<m-price>` พร้อมปุ่ม **Remove** ที่ใช้งานได้ สุดท้าย ยืนยันว่า build ผ่าน:
 
 ```bash
 pnpm --filter cart build
@@ -255,11 +255,11 @@ pnpm --filter cart build
 
 1. shell เป็น React และ cart เป็น Svelte ทางเลือกทางสถาปัตยกรรมข้อเดียวข้อไหนที่ทำให้ทั้งคู่อยู่ร่วมกันได้โดยไม่ต้อง import framework ของอีกฝ่าย?
 2. ทำไม cart BFF ถึงเก็บ *copy* ของชื่อและราคาของแต่ละ product แทนที่จะ query catalog เอา?
-3. runes อย่าง `$state` อยู่ใน `cart-store.svelte.ts` ไม่ใช่ component `.svelte` ทำไมถึงต้องมีนามสกุล `.svelte.ts` เพื่อให้มันทำงาน?
-4. Vite dev server proxy `/api` ไปที่ port 4002 มันแก้ปัญหาอะไรเทียบกับให้ browser เรียก `http://localhost:4002` ตรง ๆ?
+3. runes อย่าง `$state` อยู่ใน `cart-store.svelte.ts` ไม่ใช่ component `.svelte` ทำไมถึงต้องมีนามสกุล `.svelte.ts` เพื่อให้ runes ทำงาน?
+4. Vite dev server proxy `/api` ไปที่ port 4002 ช่วยแก้ปัญหาอะไรเทียบกับให้ browser เรียก `http://localhost:4002` ตรง ๆ?
 
-## Recap
+## สรุป
 
-cart เป็น vertical slice เต็มรูปแบบใน framework ที่สอง: Svelte 5 runes UI ที่มี Hono BFF ของตัวเองหนุนหลัง รันอิสระบน port 5002 และ 4002 มันทำงานด้วยตัวเองได้ — แต่ shell ยัง mount มันไม่ได้ เพราะ React `import` Svelte component ไม่ได้
+cart เป็น vertical slice เต็มรูปแบบใน framework ที่สอง: Svelte 5 runes UI ที่มี Hono BFF ของตัวเองหนุนหลัง รันอิสระบน port 5002 และ 4002 cart ทำงานด้วยตัวเองได้ — แต่ shell ยัง mount ไม่ได้ เพราะ React `import` Svelte component ไม่ได้
 
-นั่นคือปัญหา boundary เป๊ะ ๆ ที่ [Module 5](/mosaic/th/web-components/) วางไว้ ต่อไปเราข้ามมัน: [Mount via web component →](/mosaic/th/cart/mount-via-web-component/) wrap Svelte app นี้เป็น `<cart-app>` custom element แล้วให้ React shell render มัน
+นั่นคือปัญหา boundary เป๊ะ ๆ ที่ [Module 5](/mosaic/th/web-components/) วางไว้ ต่อไปเราจะข้ามด่านนั้น: [Mount via web component →](/mosaic/th/cart/mount-via-web-component/) wrap Svelte app นี้เป็น `<cart-app>` custom element แล้วให้ React shell render ออกมา

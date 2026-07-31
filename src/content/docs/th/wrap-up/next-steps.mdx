@@ -5,52 +5,52 @@ sidebar:
   order: 2
 ---
 
-Mosaic พิสูจน์รูปทรงแล้ว: storefront ที่ประกอบตอน runtime และหลาย framework ที่แต่ละ slice deploy เองได้ สิ่งที่มันตั้งใจละไว้คือทุกอย่างที่เปลี่ยนรูปทรงที่พิสูจน์แล้วให้กลายเป็นระบบระดับ production ส่วนต่อขยายแต่ละข้อด้านล่างบอก **มันสอนอะไร** และ **มันเสียบเข้ากับสิ่งที่คุณสร้างไว้แล้วตรงไหน** ดังนั้นไม่มีข้อไหนเป็นการเขียนใหม่ทั้งหมด — มันคือ commit ถัดไป
+Mosaic พิสูจน์รูปทรงแล้ว: storefront ที่ประกอบตอน runtime และหลาย framework ที่แต่ละ slice deploy เองได้ สิ่งที่ Mosaic ตั้งใจละไว้คือทุกอย่างที่เปลี่ยนรูปทรงที่พิสูจน์แล้วให้กลายเป็นระบบระดับ production ส่วนต่อขยายแต่ละข้อด้านล่างบอกว่า **สอนอะไร** และ **เสียบเข้ากับสิ่งที่คุณสร้างไว้แล้วตรงไหน** ดังนั้นไม่มีข้อไหนเป็นการเขียนใหม่ทั้งหมด — ทุกข้อคือ commit ถัดไป
 
 ## SSR and streaming micro-frontends
 
-**มันสอนอะไร:** วิธี render remote ที่ฝั่ง server แล้ว stream HTML ของมันเข้าไปใน response แรก เพื่อให้ user เห็น content ก่อนที่ `remoteEntry.js` ตัวใด ๆ จะโหลด — ช่องว่างที่ใหญ่ที่สุดของ shell ที่ประกอบฝั่ง client
+**สอนอะไร:** วิธี render remote ที่ฝั่ง server แล้ว stream HTML ออกไปใน response แรก เพื่อให้ user เห็น content ก่อนที่ `remoteEntry.js` ตัวใด ๆ จะโหลด — ช่องว่างที่ใหญ่ที่สุดของ shell ที่ประกอบฝั่ง client
 
-**มันเสียบเข้าตรงไหน:** ตอนนี้ shell mount remote ที่ฝั่ง client หลังโหลด ([the path of a runtime remote](/mosaic/th/wrap-up/recap/) แสดง round trip ให้ดูแล้ว) เพิ่ม server ที่ประกอบ HTML fragment ของ remote เข้ามา — [content remote](/mosaic/th/content/) อยู่ที่ฝั่ง server บางส่วนอยู่แล้วผ่าน Astro เริ่มตรงนั้นแล้วขยาย pattern ไปที่ shell ของ catalog และ cart
+**เสียบเข้าตรงไหน:** ตอนนี้ shell mount remote ที่ฝั่ง client หลังโหลด ([the path of a runtime remote](/mosaic/th/wrap-up/recap/) แสดง round trip ให้ดูแล้ว) เพิ่ม server ที่ประกอบ HTML fragment ของ remote เข้ามา — [content remote](/mosaic/th/content/) อยู่ที่ฝั่ง server บางส่วนอยู่แล้วผ่าน Astro เริ่มตรงนั้นแล้วขยาย pattern ไปที่ shell ของ catalog และ cart
 
 ## Module Federation runtime plugins
 
-**มันสอนอะไร:** plugin API ของ `@module-federation/runtime` — hook ที่ดักการโหลด remote เพื่อเพิ่ม retry, สลับ URL ของ `remoteEntry` ต่อ environment, ยัด auth header, หรือ fall back ไปที่ version ที่ cache ไว้ตอน remote ล่ม
+**สอนอะไร:** plugin API ของ `@module-federation/runtime` — hook ที่ดักการโหลด remote เพื่อเพิ่ม retry, สลับ URL ของ `remoteEntry` ต่อ environment, ยัด auth header, หรือ fall back ไปที่ version ที่ cache ไว้ตอน remote ล่ม
 
-**มันเสียบเข้าตรงไหน:** คุณชี้ `remotes` ของ shell ไปที่ URL ที่ขับด้วย env อยู่แล้วใน [Independent Deployment →](/mosaic/th/deployment/deploy-each-slice/) runtime plugin คือบ้านที่สะอาดสำหรับ logic นั้น และสำหรับ [resilience fallbacks](/mosaic/th/resilience/remote-load-fallbacks/) ที่คุณเขียนเป็น error boundary — ย้ายเรื่องตอนโหลดลงไปในตัว loader เอง
+**เสียบเข้าตรงไหน:** คุณชี้ `remotes` ของ shell ไปที่ URL ที่ขับด้วย env อยู่แล้วใน [Independent Deployment →](/mosaic/th/deployment/deploy-each-slice/) runtime plugin คือบ้านที่สะอาดสำหรับ logic นั้น และสำหรับ [resilience fallbacks](/mosaic/th/resilience/remote-load-fallbacks/) ที่คุณเขียนเป็น error boundary — ย้ายเรื่องตอนโหลดลงไปในตัว loader เอง
 
 ## A real design-system build and release pipeline
 
-**มันสอนอะไร:** การทำ version และ publish design system เป็น package ของตัวเอง — semver, changelog, และ release ที่ผู้ใช้ upgrade ขึ้นไปอย่างตั้งใจ แทนที่จะให้ทุกคน import `HEAD` จาก workspace
+**สอนอะไร:** การทำ version และ publish design system เป็น package ของตัวเอง — semver, changelog, และ release ที่ผู้ใช้ upgrade ขึ้นไปอย่างตั้งใจ แทนที่จะให้ทุกคน import `HEAD` จาก workspace
 
-**มันเสียบเข้าตรงไหน:** วันนี้ `@mosaic/design-system` เป็น workspace package ([Tokens & Primitives →](/mosaic/th/design-system/tokens-and-primitives/)) publish มันขึ้น registry, pin แต่ละ remote ไว้ที่ version หนึ่ง แล้วตอนนี้การเปลี่ยน token คือ release ที่ทีม catalog และ cart รับไปตามตารางเวลาของตัวเอง — ความเป็นอิสระแบบเดียวกับที่คุณให้ remote นำมาใช้กับ shared layer
+**เสียบเข้าตรงไหน:** วันนี้ `@mosaic/design-system` เป็น workspace package ([Tokens & Primitives →](/mosaic/th/design-system/tokens-and-primitives/)) publish ขึ้น registry, pin แต่ละ remote ไว้ที่ version หนึ่ง แล้วตอนนี้การเปลี่ยน token คือ release ที่ทีม catalog และ cart รับไปตามตารางเวลาของตัวเอง — ความเป็นอิสระแบบเดียวกับที่คุณให้ remote นำมาใช้กับ shared layer
 
 ## Contract testing between shell and remotes
 
-**มันสอนอะไร:** วิธีจับรอยต่อที่พัง *ก่อน* deploy — ว่า remote ยัง expose `./Catalog` อยู่, ว่า `<cart-app>` ยังรับ attribute ที่ shell ส่งให้, ว่า event ของ bus ยังพา field ที่ผู้ consume อ่านมาด้วย
+**สอนอะไร:** วิธีจับรอยต่อที่พัง *ก่อน* deploy — ว่า remote ยัง expose `./Catalog` อยู่, ว่า `<cart-app>` ยังรับ attribute ที่ shell ส่งให้, ว่า event ของ bus ยังพา field ที่ผู้ consume อ่านมาด้วย
 
-**มันเสียบเข้าตรงไหน:** จุด mount/interop จาก [Module Federation Core →](/mosaic/th/federation/) และ event จาก [Cross-MFE Communication →](/mosaic/th/communication/the-event-bus/) คือ contract ของคุณ เขียน test ที่ remote รันใน CI เพื่อ assert surface ที่มัน expose และ test ที่ shell รันกับ contract ที่ remote publish ออกมา — เพื่อให้ `bus.emit('cart:add', …)` ที่เปลี่ยนชื่อ field ทำ pipeline พังแทนที่จะทำ cart ของ user พัง
+**เสียบเข้าตรงไหน:** จุด mount/interop จาก [Module Federation Core →](/mosaic/th/federation/) และ event จาก [Cross-MFE Communication →](/mosaic/th/communication/the-event-bus/) คือ contract ของคุณ เขียน test ที่ remote รันใน CI เพื่อ assert surface ที่ตัวเอง expose และ test ที่ shell รันกับ contract ที่ remote publish ออกมา — เพื่อให้ `bus.emit('cart:add', …)` ที่เปลี่ยนชื่อ field ทำ pipeline พังแทนที่จะทำ cart ของ user พัง
 
 ## Per-slice observability
 
-**มันสอนอะไร:** การ trace action เดียวของ user ข้าม slice ที่ deploy แยกกัน — remote version ไหน render, BFF ตัวไหนตอบ, "add to cart" ที่ไม่เคยมาถึงพังตรงไหนกันแน่
+**สอนอะไร:** การ trace action เดียวของ user ข้าม slice ที่ deploy แยกกัน — remote version ไหน render, BFF ตัวไหนตอบ, "add to cart" ที่ไม่เคยมาถึงพังตรงไหนกันแน่
 
-**มันเสียบเข้าตรงไหน:** ทุก slice มีจุดวาง instrument ตามธรรมชาติ — [Hono BFF](/mosaic/th/catalog/catalog-bff/) สำหรับ span ฝั่ง backend, [event bus](/mosaic/th/communication/the-event-bus/) สำหรับ trace ข้าม MFE, และ [resilience layer](/mosaic/th/resilience/) สำหรับ metric ตอนโหลด remote ปั๊ม correlation id ที่ shell แล้วร้อยมันผ่าน bus และการเรียก BFF ทุกครั้ง
+**เสียบเข้าตรงไหน:** ทุก slice มีจุดวาง instrument ตามธรรมชาติ — [Hono BFF](/mosaic/th/catalog/catalog-bff/) สำหรับ span ฝั่ง backend, [event bus](/mosaic/th/communication/the-event-bus/) สำหรับ trace ข้าม MFE, และ [resilience layer](/mosaic/th/resilience/) สำหรับ metric ตอนโหลด remote ปั๊ม correlation id ที่ shell แล้วร้อยผ่าน bus และการเรียก BFF ทุกครั้ง
 
 ## CI/CD per slice
 
-**มันสอนอะไร:** pipeline ที่การเปลี่ยน slice เดียว build, test, และ deploy **เฉพาะ** slice นั้น — หลักฐานเชิงปฏิบัติการของความเป็นอิสระที่สถาปัตยกรรมสัญญาไว้
+**สอนอะไร:** pipeline ที่การเปลี่ยน slice เดียว build, test, และ deploy **เฉพาะ** slice นั้น — หลักฐานเชิงปฏิบัติการของความเป็นอิสระที่สถาปัตยกรรมสัญญาไว้
 
-**มันเสียบเข้าตรงไหน:** [Independent Deployment →](/mosaic/th/deployment/) วางไว้แล้วว่า slice ปล่อยเองได้ ต่อสายให้มันทำงานจริง: CI ที่ filter ตาม path ใน monorepo เพื่อให้การเปลี่ยนใต้ `apps/cart/` deploy UI และ BFF ของ cart แล้วไม่แตะอย่างอื่น พร้อม publish `remoteEntry.js` ตัวใหม่ที่ shell โหลดในการเข้าครั้งถัดไป
+**เสียบเข้าตรงไหน:** [Independent Deployment →](/mosaic/th/deployment/) วางไว้แล้วว่า slice ปล่อยเองได้ ต่อสายให้ทำงานจริง: CI ที่ filter ตาม path ใน monorepo เพื่อให้การเปลี่ยนใต้ `apps/cart/` deploy UI และ BFF ของ cart แล้วไม่แตะอย่างอื่น พร้อม publish `remoteEntry.js` ตัวใหม่ที่ shell โหลดในการเข้าครั้งถัดไป
 
 ## Import maps as an alternative to Module Federation
 
-**มันสอนอะไร:** ว่าการประกอบตอน runtime ไม่ได้มีแค่ Module Federation — **import maps** ที่มากับ browser resolve bare specifier ไปที่ URL ของ remote ที่มี version ได้ ให้คุณสลับตอน runtime ได้ด้วย tooling ที่น้อยกว่ามาก (และแลกกับ trade-off ที่ต่างออกไป: ไม่มีการเจรจา sharing หรือ dedupe dependency ในตัว)
+**สอนอะไร:** ว่าการประกอบตอน runtime ไม่ได้มีแค่ Module Federation — **import maps** ที่มากับ browser resolve bare specifier ไปที่ URL ของ remote ที่มี version ได้ ให้คุณสลับตอน runtime ได้ด้วย tooling ที่น้อยกว่ามาก (และแลกกับ trade-off ที่ต่างออกไป: ไม่มีการเจรจา sharing หรือ dedupe dependency ในตัว)
 
-**มันเสียบเข้าตรงไหน:** มันคือทางเลือกที่คุ้มค่าจะพิจารณาแทนทุกอย่างใน [Module Federation Core →](/mosaic/th/federation/) ลองประกอบ remote สักตัวผ่าน import map แทน config ฝั่ง MF host แล้วสัมผัสความต่าง — คุณได้ความเรียบง่ายมาแลกกับอะไร คุณเสียการจัดการ shared-singleton ไปแค่ไหน การรู้ทั้งสองอย่างคือสิ่งที่ให้คุณ *เลือก* Module Federation แทนที่จะใช้มันเป็นค่าตั้งต้นโดยอัตโนมัติ
+**เสียบเข้าตรงไหน:** นี่คือทางเลือกที่คุ้มค่าจะพิจารณาแทนทุกอย่างใน [Module Federation Core →](/mosaic/th/federation/) ลองประกอบ remote สักตัวผ่าน import map แทน config ฝั่ง MF host แล้วสัมผัสความต่าง — คุณได้ความเรียบง่ายมาแลกกับอะไร คุณเสียการจัดการ shared-singleton ไปแค่ไหน การรู้ทั้งสองอย่างคือสิ่งที่ให้คุณ *เลือก* Module Federation แทนที่จะใช้เป็นค่าตั้งต้นโดยอัตโนมัติ
 
 ---
 
-นั่นแหละ Mosaic คุณสร้าง storefront ที่หลายทีมเป็นเจ้าของแยกกันได้ ใน framework สามตัว ประกอบตอน runtime — และคุณเถียงแทนทุกรอยต่อในมันได้แล้ว
+นั่นแหละ Mosaic คุณสร้าง storefront ที่หลายทีมเป็นเจ้าของแยกกันได้ ใน framework สามตัว ประกอบตอน runtime — และคุณเถียงแทนทุกรอยต่อในระบบได้แล้ว
 
 กลับมาดูรูปทรงทั้งหมดได้ทุกเมื่อที่ [Architecture overview →](/mosaic/th/introduction/architecture/) และพาโค้ดไปต่อได้ที่ source: [github.com/avetavos/realworld-mosaic](https://github.com/avetavos/realworld-mosaic)

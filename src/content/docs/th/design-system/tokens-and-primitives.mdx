@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
 design system ที่ใช้ร่วมกัน `@mosaic/design-system` ประกอบด้วยสอง layer ที่ทุก framework ใน Mosaic consume ได้:
 
@@ -14,24 +14,24 @@ design system ที่ใช้ร่วมกัน `@mosaic/design-system` �
 
 catalog เป็น React, cart เป็น Svelte, content site เป็น Astro ถ้าแต่ละทีม style ปุ่มของตัวเอง Mosaic จะดูเหมือนสาม product ต่างกันมาเย็บติดกัน — ซึ่งในเชิงภาพคือสิ่งที่เรากำลังพยายามเลี่ยงพอดี token บวก custom element ให้ปุ่มเดียว นิยามครั้งเดียว ที่ render เหมือนกันทุกที่
 
-บทนี้สร้าง package และ primitive สามตัวของมัน เราเจอ pattern custom-element มาแล้วใน [Web Components Interop →](/mosaic/th/web-components/); ตรงนี้เราใช้มันอย่างตั้งใจเป็น shared-UI layer
+บทนี้สร้าง package พร้อม primitive สามตัว เราเจอ pattern custom-element มาแล้วใน [Web Components Interop →](/mosaic/th/web-components/); ตรงนี้เราใช้อย่างตั้งใจเป็น shared-UI layer
 
-## Why
+## ทำไม
 
 design system สำหรับแอป **framework เดียว** ง่าย: ship React component library ไป Mosaic ทำแบบนั้นไม่ได้ เพราะ React `<Button>` render ข้างใน Svelte cart หรือหน้า Astro ไม่ได้ เราต้องการ primitive ที่มี runtime เป็น browser เอง
 
-สอง feature ของ web platform ทำให้มันทำงานร่วมกันได้:
+สอง feature ของ web platform ทำให้เรื่องนี้ทำงานได้:
 
 - **Custom elements** ห่อ structure และ behaviour ไว้หลัง DOM tag จริง (`<m-button>`) framework ไหนก็ render tag ได้
 - **CSS custom property inherit *ทะลุ* shadow boundary** token ที่ set บน `:root` เข้าถึงข้างใน shadow root ของทุก primitive ข้อเท็จจริงเดียวนั้นคือเหตุผลที่ token กับ shadow DOM ประกอบกันได้: primitive ยัง encapsulate อยู่ แต่ theme ยังไหลเข้าไปได้
 
-การแบ่งจึงตั้งใจ token เปิด (global, themeable, override ต่อ surface ได้); ภายในของ primitive ปิด (encapsulate ใน shadow DOM เพื่อไม่ให้ stylesheet ของ remote ตัวไหนรั่วเข้ามาทำมันพัง)
+การแบ่งจึงตั้งใจ token เปิด (global, themeable, override ต่อ surface ได้); ภายในของ primitive ปิด (encapsulate ใน shadow DOM เพื่อไม่ให้ stylesheet ของ remote ตัวไหนรั่วเข้ามาทำพัง)
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **Tokens as CSS custom properties vs. tokens as a JS/TS object**
 
-- **Pros:** CSS variable เป็น live และ cascade — set `--m-color-primary` บน wrapper แล้วทุกอย่างข้างใต้ re-theme โดยไม่ต้องมี JS มัน cross shadow boundary ฟรี shadow-DOM primitive จึงอ่านมันได้โดยไม่ต้องต่อสายอะไร
+- **Pros:** CSS variable เป็น live และ cascade — set `--m-color-primary` บน wrapper แล้วทุกอย่างข้างใต้ re-theme โดยไม่ต้องมี JS และ CSS variable ข้าม shadow boundary ได้ฟรี shadow-DOM primitive จึงอ่านค่าได้โดยไม่ต้องต่อสายอะไร
 - **Cons:** ไม่มี type checking ตอน import; พิมพ์ผิดแบบ `--m-colour-primary` fail เงียบ ๆ ไปที่ fallback คุณเสีย autocomplete ที่ typed token object จะให้
 
 **Primitives as Web Components vs. one component library per framework**
@@ -39,7 +39,7 @@ design system สำหรับแอป **framework เดียว** ง่�
 - **Pros:** นิยามครั้งเดียว render โดย React, Svelte และ Astro เหมือนกัน ไม่ต้อง port ต่อ framework ให้คอย sync; ปุ่มจะ drift ระหว่างทีมไม่ได้
 - **Cons:** custom element เขียนยืดกว่า framework component และ form participation (label, `disabled`, focus) ต้องลงแรงตั้งใจซึ่ง native `<button>` ให้ฟรี
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `packages/design-system/package.json`
 
@@ -205,7 +205,7 @@ define("m-badge", MBadge);
 export { MButton, MCard, MBadge };
 ```
 
-## Verify
+## ตรวจสอบผล
 
 install workspace แล้ว register primitive จากแอปตัวไหนก็ได้ที่พึ่ง `@mosaic/design-system`
 
@@ -246,11 +246,11 @@ pnpm --filter shell build   # succeeds; the design-system source resolves throug
 **Check your understanding:**
 
 1. ทำไม CSS custom property ที่ set บน `:root` style ข้างใน shadow DOM ของ primitive ได้ ในเมื่อ class selector ธรรมดาทำไม่ได้?
-2. อะไรพังถ้า remote สองตัวต่างเรียก `customElements.define("m-button", ...)` และ guard ใน `index.ts` ป้องกันมันยังไง?
-3. ทำไม token จึงตั้งใจให้ *global* (เปิดให้ override) ในขณะที่ internal style ของ primitive ตั้งใจให้ *encapsulate* (shadow DOM)?
+2. อะไรพังถ้า remote สองตัวต่างเรียก `customElements.define("m-button", ...)` และ guard ใน `index.ts` ป้องกันเรื่องนี้ยังไง?
+3. ทำไม token จึงตั้งใจให้ *global* (เปิดให้ override) ส่วน internal style ของ primitive ตั้งใจให้ *encapsulate* (shadow DOM)?
 4. `var(--m-color-primary, #8b5cf6)` แต่ละตัวพก fallback ที่ hard-code ไว้ fallback นั้นป้องกัน failure แบบไหน?
 
-## Recap
+## สรุป
 
 เราสร้าง `@mosaic/design-system`: token เป็น CSS custom property บน `:root` และ primitive สามตัว — `<m-button>`, `<m-card>`, `<m-badge>` — เป็น custom element แบบ encapsulate ที่อ่าน token พวกนั้นทะลุ shadow boundary นิยามเดียว หน้าตาเดียว ไม่มี copy ต่อ framework การ register เป็น idempotent เพื่อให้หลาย remote import ได้อย่างปลอดภัย
 

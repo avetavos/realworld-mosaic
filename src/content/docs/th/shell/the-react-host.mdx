@@ -5,11 +5,11 @@ sidebar:
   order: 1
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
-**shell** — React app ที่เป็นเจ้าของทุกอย่างที่แชร์กันทั่ว Mosaic: layout, top-nav และ (อีกไม่นาน) session กับ top-level routing บทนี้เราสร้าง shell เป็น React + Vite app ธรรมดา ที่มี layout จริงและ slot ที่ remote จะ mount ลงไป มันรันที่ **port 5000** ยังไม่มี federation — นั่นคือ[บทถัดไป](/mosaic/th/shell/host-config/) ก่อนอื่นเราต้องมี host ที่คุ้มค่าจะ host เข้าไป
+**shell** — React app ที่เป็นเจ้าของทุกอย่างที่แชร์กันทั่ว Mosaic: layout, top-nav และ (อีกไม่นาน) session กับ top-level routing บทนี้เราสร้าง shell เป็น React + Vite app ธรรมดา ที่มี layout จริงและ slot ที่ remote จะ mount ลงไป shell รันที่ **port 5000** ยังไม่มี federation — นั่นคือ[บทถัดไป](/mosaic/th/shell/host-config/) ก่อนอื่นเราต้องมี host ที่คุ้มค่าจะ host เข้าไป
 
-## Why
+## ทำไม
 
 ในระบบ micro-frontend ต้องมี app ตัวหนึ่งเป็นเจ้าของ *กรอบ*: header ที่ user เห็นทุกหน้า, navigation ระหว่างพื้นที่, session, routing นั่นคือ shell (หรือ "host") ทุกอย่างที่เหลือ — catalog, cart, content — คือ **remote** ที่ mount *ข้างใน* layout ของ shell
 
@@ -17,23 +17,23 @@ sidebar:
 
 shell เป็น React เพราะ ecosystem ของ React คือแกนหลักของซีรีส์นี้ และเพราะการแชร์ React เป็น singleton กับ React remote (catalog) คือเส้นทาง interop ที่ง่ายที่สุด remote ที่ไม่ใช่ React (Svelte cart) mount ผ่าน boundary แบบ Web Component แทน — แต่นั่นไว้ทีหลัง
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **A dedicated host app vs. no host (peer remotes)**
 
-- **Pros:** มีที่เดียวเป็นเจ้าของ layout, nav, session และ routing user จึงเห็น app เดียวที่กลมกลืน; remote โฟกัสอยู่กับ slice ของมัน; มี entry point เดียวชัด ๆ ให้โหลด
-- **Cons:** host เป็น shared dependency ที่ทุกทีมพึ่งพา — เปลี่ยนกรอบทีกระทบทุกคน จึงต้องมี ownership ที่รอบคอบ และมันกลายเป็นคอขวดได้ถ้าโตเกิน "กรอบ" การรักษาให้มันบางคือวินัย
+- **Pros:** มีที่เดียวเป็นเจ้าของ layout, nav, session และ routing user จึงเห็น app เดียวที่กลมกลืน; remote โฟกัสอยู่กับ slice ของตัวเอง; มี entry point เดียวชัด ๆ ให้โหลด
+- **Cons:** host เป็น shared dependency ที่ทุกทีมพึ่งพา — เปลี่ยนกรอบทีกระทบทุกคน จึงต้องมี ownership ที่รอบคอบ และกลายเป็นคอขวดได้ถ้าโตเกิน "กรอบ" การรักษา host ให้บางคือวินัย
 
 **Building the host as plain React first vs. adding federation immediately**
 
 - **Pros:** app รันและ render ได้ตั้งแต่ step แรก; verify layout แยกเดี่ยว ๆ ได้; federation กลายเป็นการเพิ่มเข้ามา ไม่ใช่เงื่อนไขบังคับให้อะไรทำงานได้
 - **Cons:** คุณจะไม่เห็น remote โหลดจนกว่าบทถัดไป — เลื่อนความ "ว้าว" ออกไปเพื่อแลกกับรากฐานที่ debug ได้จริง
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `apps/shell/package.json`
 
-shell เป็น React + Vite app มันรันที่ port 5000 และตอนนี้พึ่งแค่ React กับ Vite React plugin
+shell เป็น React + Vite app รันที่ port 5000 และตอนนี้พึ่งแค่ React กับ Vite React plugin
 
 ```json
 {
@@ -159,7 +159,7 @@ export function App() {
 .shell__main { padding: 1.5rem; }
 ```
 
-## Verify
+## ตรวจสอบผล
 
 install แล้วเริ่ม shell:
 
@@ -175,7 +175,7 @@ output ที่คาดหวัง:
   ➜  Local:   http://localhost:5000/
 ```
 
-เปิด `http://localhost:5000/` คุณควรเห็น header **🧩 Mosaic**, nav link สามอัน และ placeholder "The shell is running" ใน main slot จากนั้นยืนยันว่ามัน build สะอาด — check ที่ทุกบทจบด้วย:
+เปิด `http://localhost:5000/` คุณควรเห็น header **🧩 Mosaic**, nav link สามอัน และ placeholder "The shell is running" ใน main slot จากนั้นยืนยันว่า build ผ่านสะอาด — check ที่ทุกบทจบด้วย:
 
 ```bash
 pnpm --filter shell build
@@ -185,14 +185,14 @@ pnpm --filter shell build
 
 **Check your understanding:**
 
-1. shell เป็นเจ้าของอะไรที่ remote ไม่เป็น และทำไมต้องมี app เดียวเป๊ะ ๆ เป็นเจ้าของมัน?
+1. shell เป็นเจ้าของอะไรที่ remote ไม่เป็น และทำไมต้องมี app เดียวเป๊ะ ๆ เป็นเจ้าของสิ่งเหล่านั้น?
 2. ทำไมต้อง build shell เป็น React app ธรรมดา *ก่อน* เพิ่ม Module Federation แทนที่จะ config federation ตั้งแต่ต้น?
 3. shell เป็น React และแชร์ React กับ catalog remote แต่ Svelte cart mount ด้วยวิธีต่างออกไป boundary ที่ remote ที่ไม่ใช่ React ใช้แทนคืออะไร?
 4. ทำไม dev script ถึงใช้ `--strictPort` บน port 5000?
 
-## Recap
+## สรุป
 
-shell รันแล้ว: React + Vite app บน port 5000 ที่มี header, top-nav และ mount slot `<main>` รอ remote อยู่ ตอนนี้มันเป็น app ธรรมดา — ซึ่งคือประเด็น federation คือ layer ถัดไป ไม่ใช่รากฐาน
+shell รันแล้ว: React + Vite app บน port 5000 ที่มี header, top-nav และ mount slot `<main>` รอ remote อยู่ ตอนนี้ยังเป็น app ธรรมดา — ซึ่งคือประเด็น federation คือ layer ถัดไป ไม่ใช่รากฐาน
 
 ทีนี้มาเปลี่ยน host นี้ให้เป็น *host* จริง ๆ ด้วยการเพิ่ม Module Federation config แล้วโหลด remote ตัวแรก
 

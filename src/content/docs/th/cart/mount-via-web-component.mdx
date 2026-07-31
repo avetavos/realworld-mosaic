@@ -1,11 +1,11 @@
 ---
 title: Mount via web component
-description: "compile Svelte cart เป็น <cart-app> custom element, expose ./register ผ่าน Module Federation, แล้ว mount มันใน React shell — ผลตอบแทนของ cross-framework"
+description: "compile Svelte cart เป็น <cart-app> custom element, expose ./register ผ่าน Module Federation, แล้ว mount ใน React shell — ผลตอบแทนของ cross-framework"
 sidebar:
   order: 2
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
 บทที่แล้วทิ้งเราไว้กับ Svelte cart ที่ทำงานได้แต่ React shell **mount ไม่ได้** — React ไม่มีทาง `import` แล้ว render Svelte component บทนี้ปิดช่องนั้นและส่งมอบประเด็นทั้งหมดของ Mosaic: **React host ที่ render Svelte remote ตอน runtime** โดยไม่มีฝ่ายไหน share framework กัน
 
@@ -17,27 +17,27 @@ sidebar:
 - การ import `cart/register` define `<cart-app>` custom element เป็น side effect
 - React shell mount Svelte cart ด้วย JSX สองบรรทัด
 
-## Why
+## ทำไม
 
 ใน [Module 4](/mosaic/th/catalog/) shell consume catalog เป็น React component — `React.lazy(() => import('catalog/Catalog'))` — เพราะทั้งสองฝั่ง share React เป็น singleton path นั้นปิดตรงนี้: Svelte ไม่ใช่ React ดังนั้นไม่มี component type ที่ host เข้าใจ
 
-แต่ browser มี framework-neutral component model อยู่แล้ว: **custom elements** ทุก framework render tag `<cart-app>` ได้ และ browser instantiate มัน ดังนั้นแทนที่จะ expose *Svelte component* cart จึง expose *registrar* — module ที่มีหน้าที่เดียวคือเรียก `customElements.define('cart-app', …)` Svelte 5 ทำ definition นั้นให้เราเมื่อเราตั้ง [`customElement` compiler option](https://svelte.dev/docs/svelte/custom-elements) แล้วให้ component มี tag `<svelte:options customElement="cart-app" />` การ import module รัน definition ตั้งแต่นั้น `<cart-app>` เป็น HTML element ของจริงที่ shell render, style, และลบได้
+แต่ browser มี framework-neutral component model อยู่แล้ว: **custom elements** ทุก framework render tag `<cart-app>` ได้ และ browser instantiate ให้ ดังนั้นแทนที่จะ expose *Svelte component* cart จึง expose *registrar* — module ที่มีหน้าที่เดียวคือเรียก `customElements.define('cart-app', …)` Svelte 5 ทำ definition นั้นให้เราเมื่อเราตั้ง [`customElement` compiler option](https://svelte.dev/docs/svelte/custom-elements) แล้วให้ component มี tag `<svelte:options customElement="cart-app" />` การ import module รัน definition ตั้งแต่นั้น `<cart-app>` เป็น HTML element ของจริงที่ shell render, style, และลบได้
 
-นี่คือการ generalise ที่ [Module 5](/mosaic/th/web-components/) สัญญาไว้: **custom element คือ universal mount boundary** catalog *ก็* expose มันได้ ส่วน cart *ต้อง* เพราะมันเป็น framework คนละตัว รอยต่อเดียวกัน และทุก remote ในอนาคตก็ใช้มันได้
+นี่คือการ generalise ที่ [Module 5](/mosaic/th/web-components/) สัญญาไว้: **custom element คือ universal mount boundary** catalog *ก็* expose ได้ ส่วน cart *ต้อง* ใช้ เพราะเป็น framework คนละตัว รอยต่อเดียวกันนี้ remote ในอนาคตทุกตัวก็ใช้ได้
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **Exposing a custom-element registrar vs. exposing a framework component**
 
-- **Pros:** framework-agnostic — host render tag ไม่ใช่ type ของ React/Svelte/Vue remote เปลี่ยน framework ภายในของมันได้โดยไม่พัง contract ของ host รูปแบบ (`import for side effect` แล้ว render tag) เหมือนกันเป๊ะสำหรับทุก remote ที่ไม่ใช่ React
-- **Cons:** คุณเสีย typed props/children ที่ React component ให้ — การสื่อสารเกิดผ่าน attribute, property, และ event แทน Svelte remote ship runtime ของตัวเอง (ไม่มี singleton ที่ share กัน) การ style ด้วย shadow-DOM มีกฎของมันเองให้เรียนรู้
+- **Pros:** framework-agnostic — host render tag ไม่ใช่ type ของ React/Svelte/Vue remote เปลี่ยน framework ภายในของตัวเองได้โดยไม่พัง contract ของ host รูปแบบ (`import for side effect` แล้ว render tag) เหมือนกันเป๊ะสำหรับทุก remote ที่ไม่ใช่ React
+- **Cons:** คุณเสีย typed props/children ที่ React component ให้ — การสื่อสารเกิดผ่าน attribute, property, และ event แทน Svelte remote ship runtime ของตัวเอง (ไม่มี singleton ที่ share กัน) การ style ด้วย shadow-DOM มีกฎเฉพาะตัวให้เรียนรู้
 
 **Svelte's built-in `customElement` compiler vs. a hand-written wrapper class**
 
 - **Pros:** ไม่มี boilerplate — `<svelte:options>` tag เดียวแล้ว compiler generate `HTMLElement` subclass, attribute reflection, และ lifecycle ให้ props map ไปเป็น element property อัตโนมัติ
 - **Cons:** ควบคุม lifecycle ของ element และ shadow-DOM boundary ได้น้อยลง รายละเอียด interop บางอย่าง (slotted content, การตั้งชื่อ event) ตามธรรมเนียมของ Svelte ไม่ใช่ของคุณ คุณ opt ทั้ง component เข้าสู่ semantics ของ custom element
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `apps/cart/src/cart-app.svelte`
 
@@ -65,7 +65,7 @@ import './cart-app.svelte';
 
 ### 3. `apps/cart/vite.config.ts`
 
-สองการเปลี่ยนจาก config บทที่แล้ว: เปิด custom-element compilation แล้วเพิ่ม federation plugin ที่ expose `./register` ตาม build contract cart share **ไม่มีอะไรเลย** กับ host — มันเป็น Svelte จึงไม่มี React singleton ให้ใช้ซ้ำ — และ `type: 'module'` กับ `build.target: 'esnext'` จำเป็นสำหรับ Vite remote
+สองการเปลี่ยนจาก config บทที่แล้ว: เปิด custom-element compilation แล้วเพิ่ม federation plugin ที่ expose `./register` ตาม build contract cart share **ไม่มีอะไรเลย** กับ host — เพราะเป็น Svelte จึงไม่มี React singleton ให้ใช้ซ้ำ — และ `type: 'module'` กับ `build.target: 'esnext'` จำเป็นสำหรับ Vite remote
 
 ```ts
 import { defineConfig } from 'vite';
@@ -98,7 +98,7 @@ export default defineConfig({
 
 ### 4. `apps/shell/vite.config.ts` — register the remote
 
-host ลิสต์ `catalog` อยู่แล้ว เพิ่ม `cart` เข้าไปข้าง ๆ สังเกตว่า entry ของ cart หน้าตาเหมือน React remote เป๊ะ — host ไม่รู้และไม่สนว่ามันเป็น Svelte
+host ลิสต์ `catalog` อยู่แล้ว เพิ่ม `cart` เข้าไปข้าง ๆ สังเกตว่า entry ของ cart หน้าตาเหมือน React remote เป๊ะ — host ไม่รู้และไม่สนว่าเป็น Svelte
 
 ```ts
 federation({
@@ -114,7 +114,7 @@ federation({
 
 ### 5. `apps/shell/src/CartPanel.tsx` — mount it in React
 
-เรา import registrar เพื่อ side effect ของมัน แล้ว render tag เรา define element หนึ่งครั้งตอน mount แล้ว track ว่ามันพร้อมเมื่อไหร่ เพื่อไม่ให้ React render `<cart-app>` ก่อนที่มันจะมีอยู่ JSX ส่ง `cart-app` ตรงไปที่ DOM — มันเป็น custom element ของจริง ดังนั้น React แค่สร้างมัน
+เรา import registrar เพื่อ side effect แล้ว render tag เรา define element หนึ่งครั้งตอน mount แล้ว track ว่าพร้อมเมื่อไหร่ เพื่อไม่ให้ React render `<cart-app>` ก่อนที่ element จะมีอยู่ JSX ส่ง `cart-app` ตรงไปที่ DOM — เป็น custom element ของจริง React จึงแค่สร้างขึ้นมา
 
 ```tsx
 import { useEffect, useState } from 'react';
@@ -134,7 +134,7 @@ export function CartPanel() {
 }
 ```
 
-TypeScript ไม่รู้จัก `<cart-app>` โดย default declare มันหนึ่งครั้งเพื่อให้ JSX type-check ผ่าน:
+TypeScript ไม่รู้จัก `<cart-app>` โดย default declare ไว้หนึ่งครั้งเพื่อให้ JSX type-check ผ่าน:
 
 ```ts
 // apps/shell/src/custom-elements.d.ts
@@ -145,7 +145,7 @@ declare namespace JSX {
 }
 ```
 
-## Verify
+## ตรวจสอบผล
 
 เริ่ม cart BFF, cart remote, และ shell:
 
@@ -165,7 +165,7 @@ curl -s http://localhost:5002/remoteEntry.js | grep -o './register'
 เปิด shell ที่ `http://localhost:5000` แล้ว navigate ไปที่ cart คุณควรเห็น:
 
 - Svelte cart render **อยู่ใน React shell** — UI เดียวกับ standalone app ในบทก่อน
-- ใน DevTools มี `<cart-app>` element ของจริงใน DOM (กางมันดูจะเห็น shadow DOM ของ Svelte)
+- ใน DevTools มี `<cart-app>` element ของจริงใน DOM (กางดูจะเห็น shadow DOM ของ Svelte)
 - Network tab โหลด `remoteEntry.js` จาก `localhost:5002` ตอน runtime — shell ไม่เคยถูก build มาพร้อม cart
 
 จากนั้นยืนยันว่าทั้งสองฝั่ง build ผ่าน:
@@ -178,11 +178,11 @@ pnpm --filter cart build && pnpm --filter shell build
 **ตรวจสอบความเข้าใจ:**
 
 1. catalog ถูก mount ด้วย `React.lazy(() => import('catalog/Catalog'))` แต่ cart ถูก mount ด้วย `import('cart/register')` แล้ว `<cart-app>` ทำไม cart ถึงใช้วิธีของ catalog ไม่ได้?
-2. `register.ts` ไม่มี export — มีแค่ import เดียว มันกำลังทำอะไรจริง ๆ และทำไมแค่นั้นถึงพอ?
-3. federation config ของ cart ตั้ง `shared: []` ในขณะที่ catalog share `react`/`react-dom` ทำไม empty ถึงถูกต้องสำหรับ cart?
+2. `register.ts` ไม่มี export — มีแค่ import เดียว ไฟล์นี้ทำอะไรจริง ๆ และทำไมแค่นั้นถึงพอ?
+3. federation config ของ cart ตั้ง `shared: []` ส่วน catalog share `react`/`react-dom` ทำไม empty ถึงถูกต้องสำหรับ cart?
 4. ถ้าพรุ่งนี้ทีม cart เขียน remote ใหม่ด้วย Vue แต่ยัง expose `./register` และ define `<cart-app>` shell ต้องเปลี่ยนอะไร?
 
-## Recap
+## สรุป
 
 คุณเพิ่งทำสิ่งที่ทั้ง architecture ถูกสร้างมาเพื่อทำ: **React host ที่ render Svelte remote ตอน runtime** เชื่อมด้วย `<cart-app>` custom element และส่งผ่าน Module Federation shell render tag, browser instantiate Svelte app, ไม่มีใคร share framework นั่นคือ cross-framework federation ที่ทำงานได้
 

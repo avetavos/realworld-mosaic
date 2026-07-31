@@ -1,41 +1,41 @@
 ---
 title: Shared singletons
-description: "ทำไม React ต้องโหลดครั้งเดียวข้าม host และ remote — shared dependencies, singleton, และ shareScope ที่ทำให้มันเวิร์ก"
+description: "ทำไม React ต้องโหลดครั้งเดียวข้าม host และ remote — shared dependencies, singleton, และ shareScope ที่ทำให้เรื่องนี้เวิร์ก"
 sidebar:
   order: 2
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
-บทนี้ไม่มี app ใหม่ — แต่เราจะทำให้ config `shared` ที่เรา copy เข้าไปในทุก `vite.config.ts` *เข้าใจได้* แล้วพิสูจน์มัน เราจะเห็นว่าอะไรพังเมื่อ remote ส่ง React ของตัวเอง, ทำไม `shared: ['react', 'react-dom']` ถึงแก้มัน, `shareScope: 'default'` กับ semantics ของ `singleton` หมายถึงอะไร และ federation runtime negotiate React instance *เดียว* ข้าม host และ React remote ทุกตัวอย่างไร
+บทนี้ไม่มี app ใหม่ — แต่เราจะทำให้ config `shared` ที่เรา copy เข้าไปในทุก `vite.config.ts` *เข้าใจได้* แล้วพิสูจน์ให้เห็น เราจะเห็นว่าอะไรพังเมื่อ remote ส่ง React ของตัวเอง, ทำไม `shared: ['react', 'react-dom']` ถึงแก้ปัญหานั้นได้, `shareScope: 'default'` กับ semantics ของ `singleton` หมายถึงอะไร และ federation runtime negotiate React instance *เดียว* ข้าม host และ React remote ทุกตัวอย่างไร
 
-นี่คือชิ้นสุดท้ายของรากฐาน Module Federation หลังจากนี้ remote ทุกตัวที่คุณ build สืบทอด React ที่แชร์อย่างถูกต้องมาโดยที่คุณไม่ต้องคิดถึงมัน
+นี่คือชิ้นสุดท้ายของรากฐาน Module Federation หลังจากนี้ remote ทุกตัวที่คุณ build สืบทอด React ที่แชร์อย่างถูกต้องมาโดยที่คุณไม่ต้องคิดถึงเรื่องนี้อีก
 
-## Why
+## ทำไม
 
 React สอง app โหลดเข้าหน้าเดียว แต่ละตัวมี React ของตัวเอง คือความล้มเหลวคลาสสิกที่ชวนงง hook throw "invalid hook call"; context ที่ set ใน host มองไม่เห็นใน remote; `React.lazy` และ `<Suspense>` ทำงานเพี้ยน เหตุผลคือ React เก็บ internal state (hook dispatcher, current context) ไว้ใน *module-level* variable สองสำเนาของ module หมายถึงสอง set ของ state นั้น — และ component ที่ render โดย React ของ host แต่รันกับ React ของ remote เห็นตัวผิด
 
-`shared` แก้มันด้วยการทำให้ dependency เป็น **instance ที่ negotiate และแชร์กัน** แทน copy ที่ bundle เข้าไป เมื่อ host และ remote ต่างประกาศ `react` เป็น shared ใน **shareScope** เดียวกัน (`'default'`) federation runtime ดู version ที่มีให้เลือก, เลือก instance ที่เข้ากันได้หนึ่งตัว แล้วส่งให้ *ทั้งคู่* React โหลดครั้งเดียวและถูกใช้ซ้ำ ในฐานะ **singleton** runtime บังคับให้มี copy ที่ active แค่ตัวเดียว — ถ้าสอง version ที่เข้ากันไม่ได้ชนกัน คุณจะได้ warning ชัด ๆ แทนความพังเงียบ ๆ ที่หาสาเหตุไม่เจอ
+`shared` แก้เรื่องนี้ด้วยการทำให้ dependency เป็น **instance ที่ negotiate และแชร์กัน** แทน copy ที่ bundle เข้าไป เมื่อ host และ remote ต่างประกาศ `react` เป็น shared ใน **shareScope** เดียวกัน (`'default'`) federation runtime ดู version ที่มีให้เลือก, เลือก instance ที่เข้ากันได้หนึ่งตัว แล้วส่งให้ *ทั้งคู่* React โหลดครั้งเดียวและถูกใช้ซ้ำ ในฐานะ **singleton** runtime บังคับให้มี copy ที่ active แค่ตัวเดียว — ถ้าสอง version ที่เข้ากันไม่ได้ชนกัน คุณจะได้ warning ชัด ๆ แทนความพังเงียบ ๆ ที่หาสาเหตุไม่เจอ
 
-Svelte cart remote ตรงข้าม แชร์ React *ไม่มีเลย* — เพราะมันไม่ใช่ React app มัน mount ผ่าน boundary แบบ Web Component แทน ซึ่งคือเหตุผลเป๊ะ ๆ ว่าทำไมมันไม่ต้องเข้าร่วม shared scope ของ React การแชร์มีไว้สำหรับ runtime ที่แชร์กันจริง ๆ ไม่ใช่สำหรับทุกอย่าง
+ตรงข้ามกับ Svelte cart remote ที่ไม่แชร์ React *เลย* — เพราะไม่ใช่ React app แต่ mount ผ่าน boundary แบบ Web Component แทน นั่นคือเหตุผลเป๊ะ ๆ ว่าทำไมจึงไม่ต้องเข้าร่วม shared scope ของ React การแชร์มีไว้สำหรับ runtime ที่แชร์กันจริง ๆ ไม่ใช่สำหรับทุกอย่าง
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **Sharing React as a singleton vs. each remote bundling its own copy**
 
 - **Pros:** React instance เดียวหมายถึง hook, context และ Suspense ทำงานลื่นข้าม boundary; ต้นทุน byte ของ React จ่ายครั้งเดียว ไม่ใช่ครั้งต่อ remote; user download น้อยลง
-- **Cons:** host และ remote ต้องอยู่บน React version ที่เข้ากันได้ — shared singleton ผูกมัดกันบน dependency ตัวนั้น major version ที่เข้ากันไม่ได้ต้อง coordinate ไม่ใช่ส่งฝ่ายเดียว มันคือข้อจำกัดจริงและซื่อสัตย์: บางอย่างต้องตกลงกันจริง ๆ
+- **Cons:** host และ remote ต้องอยู่บน React version ที่เข้ากันได้ — shared singleton ผูกมัดกันบน dependency ตัวนั้น major version ที่เข้ากันไม่ได้ต้อง coordinate ไม่ใช่ส่งฝ่ายเดียว นี่คือข้อจำกัดจริงและซื่อสัตย์: บางอย่างต้องตกลงกันจริง ๆ
 
 **`singleton: true` semantics vs. allowing multiple versions**
 
 - **Pros:** สำหรับ runtime ที่มี state อย่าง React, instance ที่ active ตัวเดียวคือสิ่งที่ *จำเป็น* ต่อความถูกต้อง — การรับประกัน singleton คือสิ่งที่ทำให้ render ข้าม boundary ทำงานได้เลย และ version conflict โผล่แบบดัง ๆ
-- **Cons:** ยืดหยุ่นน้อยลง: remote รัน React major คนละตัวจาก host เงียบ ๆ ไม่ได้ สำหรับ library ที่ไม่มี state (เช่น date formatter) หลาย version ก็ไม่เป็นไร และ singleton จะเข้มงวดเกินจำเป็น — คุณจึงแชร์พวกนั้นโดยไม่ต้องใช้มัน
+- **Cons:** ยืดหยุ่นน้อยลง: remote รัน React major คนละตัวจาก host เงียบ ๆ ไม่ได้ สำหรับ library ที่ไม่มี state (เช่น date formatter) หลาย version ก็ไม่เป็นไร และ singleton จะเข้มงวดเกินจำเป็น — คุณจึงแชร์พวกนั้นได้โดยไม่ต้องตั้ง singleton
 
-## Set it up
+## ติดตั้ง
 
 ### 1. The shared config, in full
 
-เราเขียนแบบสั้น `shared: ['react', 'react-dom']` มาตลอด นั่นคือ sugar ของ object form แบบชัดเจน ซึ่งควรดูเพราะมันตั้งชื่อสิ่งที่เกิดขึ้น host **และ** React remote ทุกตัวต้องตกลงกัน:
+เราเขียนแบบสั้น `shared: ['react', 'react-dom']` มาตลอด นั่นคือ sugar ของ object form แบบชัดเจน ซึ่งควรดูเพราะเรียกชื่อสิ่งที่เกิดขึ้นตรง ๆ host **และ** React remote ทุกตัวต้องตกลงกัน:
 
 ```ts
 federation({
@@ -54,11 +54,11 @@ federation({
 })
 ```
 
-`singleton: true` พูดว่า "ต้องมี instance ที่ active ตัวเดียวเป๊ะของสิ่งนี้ทั่วทั้ง shared scope" `requiredVersion` คือสิ่งที่ runtime เช็ค compatibility ตอน negotiate array shorthand infer พวกนี้จาก `package.json` ของแต่ละ app ซึ่งเป็นเหตุผลว่าทำไมการรักษา React version ให้ตรงกันทั้ง workspace (mindset toolchain ที่ pin ที่ root ตัวเดียวของ Module 1) ถึงสำคัญ
+`singleton: true` พูดว่า "ต้องมี instance ที่ active ตัวเดียวเป๊ะของสิ่งนี้ทั่วทั้ง shared scope" `requiredVersion` คือสิ่งที่ runtime เช็ค compatibility ตอน negotiate array shorthand infer พวกนี้จาก `package.json` ของแต่ละ app จึงเป็นเหตุผลว่าทำไมการรักษา React version ให้ตรงกันทั้ง workspace (mindset toolchain ที่ pin ที่ root ตัวเดียวของ Module 1) ถึงสำคัญ
 
 ### 2. Same shareScope everywhere
 
-ทุกคู่ host-remote ใน Mosaic ใช้ `shareScope: 'default'` (ใน entry `remotes` ของ host) เพื่อให้ทุก app negotiate ใน scope *เดียว* ถ้า catalog แชร์ React ใน scope `'default'` แต่ host มองใน scope ต่างกัน มันจะไม่มีวันเจอ instance ของกันและกัน และทั้งคู่จะโหลดของตัวเอง — นำ bug ที่การแชร์มีไว้ป้องกันกลับมาเป๊ะ ๆ scope เดียว, negotiate ครั้งเดียว, React เดียว
+ทุกคู่ host-remote ใน Mosaic ใช้ `shareScope: 'default'` (ใน entry `remotes` ของ host) เพื่อให้ทุก app negotiate ใน scope *เดียว* ถ้า catalog แชร์ React ใน scope `'default'` แต่ host มองใน scope ต่างกัน ทั้งคู่จะไม่มีวันเจอ instance ของกันและกัน และทั้งคู่จะโหลดของตัวเอง — นำ bug ที่การแชร์มีไว้ป้องกันกลับมาเป๊ะ ๆ scope เดียว, negotiate ครั้งเดียว, React เดียว
 
 ### 3. Nothing to share for the Svelte remote
 
@@ -73,9 +73,9 @@ federation({
 })
 ```
 
-มันไม่เข้าร่วม singleton ของ React เพราะมันไม่ใช้ React boundary แบบ Web Component คือสิ่งที่ทำให้ remote ที่ไม่ใช่ React อยู่ใน React host ได้โดยไม่ต้องแชร์ framework เลย
+cart ไม่เข้าร่วม singleton ของ React เพราะไม่ใช้ React boundary แบบ Web Component คือสิ่งที่ทำให้ remote ที่ไม่ใช่ React อยู่ใน React host ได้โดยไม่ต้องแชร์ framework เลย
 
-## Verify
+## ตรวจสอบผล
 
 การ verify ที่ชัดที่สุดคือ *เห็น* singleton ทำงานใน app ที่รันอยู่จากบทที่แล้ว (shell บน 5000, catalog บน 5001)
 
@@ -107,14 +107,14 @@ pnpm --filter shell build && pnpm --filter catalog build
 **Check your understanding:**
 
 1. ทำไม React สองสำเนาบนหน้าเดียวถึงพัง hook โดยเฉพาะ? React เก็บ state แบบไหนที่ทำให้ instance เดียวจำเป็น?
-2. `singleton: true` รับประกันอะไร และทำไมมันถึงเป็นตัวเลือกที่ถูกสำหรับ React แต่เกินจำเป็นสำหรับ utility library ที่ไม่มี state?
+2. `singleton: true` รับประกันอะไร และทำไมจึงเป็นตัวเลือกที่ถูกสำหรับ React แต่เกินจำเป็นสำหรับ utility library ที่ไม่มี state?
 3. catalog แชร์ React; Svelte cart ไม่แชร์อะไรเลย ทำไมนั่นถึงไม่ใช่ความไม่สอดคล้องแต่เป็นการออกแบบที่ถูก?
-4. ถ้า host negotiate shared dep ใน `shareScope: 'default'` แต่ remote ใช้ scope ต่างกัน จะเกิดอะไรขึ้น — และทำไมมันคือ bug ตัวที่การแชร์มีไว้ป้องกันเป๊ะ ๆ?
+4. ถ้า host negotiate shared dep ใน `shareScope: 'default'` แต่ remote ใช้ scope ต่างกัน จะเกิดอะไรขึ้น — และทำไมนั่นคือ bug ตัวที่การแชร์มีไว้ป้องกันเป๊ะ ๆ?
 
-## Recap
+## สรุป
 
-ตอนนี้คุณเข้าใจรากฐาน Module Federation ครบถ้วน: remote **expose** module, host **consume** มันตอน runtime ผ่าน `remoteEntry.js` และ `shared` singleton ใน `shareScope` เดียวกันรับประกันว่า runtime ที่มี state อย่าง React โหลดครั้งเดียวเป๊ะ — เพื่อให้ hook, context และ Suspense ทำงานข้าม boundary คุณเห็น bug สอง React โผล่มาแล้วหายไป ซึ่งคือเหตุผลทั้งหมดว่าทำไม config ถึงหน้าตาแบบนั้น
+ตอนนี้คุณเข้าใจรากฐาน Module Federation ครบถ้วน: remote **expose** module, host **consume** ตอน runtime ผ่าน `remoteEntry.js` และ `shared` singleton ใน `shareScope` เดียวกันรับประกันว่า runtime ที่มี state อย่าง React โหลดครั้งเดียวเป๊ะ — เพื่อให้ hook, context และ Suspense ทำงานข้าม boundary คุณเห็น bug สอง React โผล่มาแล้วหายไป ซึ่งคือเหตุผลทั้งหมดว่าทำไม config ถึงหน้าตาแบบนั้น
 
-remote ทุกตัวจากนี้เสียบเข้ากับสิ่งนี้ ได้เวลาสร้างตัวจริงตัวแรก: **catalog** — React remote ที่มี product grid, expose ให้ shell, หนุนหลังด้วย Hono BFF ของมันเอง
+remote ทุกตัวจากนี้เสียบเข้ากับสิ่งนี้ ได้เวลาสร้างตัวจริงตัวแรก: **catalog** — React remote ที่มี product grid, expose ให้ shell, หนุนหลังด้วย Hono BFF ของตัวเอง
 
 Next → [Catalog Remote (React) →](/mosaic/th/catalog/)

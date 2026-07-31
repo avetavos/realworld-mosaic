@@ -1,13 +1,13 @@
 ---
 title: Real-World Projects Roadmap
-description: "Mosaic เป็นโปรเจกต์ micro-frontend ในซีรีส์ที่ดัดแปลง catalog ทั้งหมดของ Learn Hub มาเป็นแอปพลิเคชันจริง นี่คือจุดที่มันอยู่และสิ่งที่อยู่รอบ ๆ มัน"
+description: "Mosaic เป็นโปรเจกต์ micro-frontend ในซีรีส์ที่ดัดแปลง catalog ทั้งหมดของ Learn Hub มาเป็นแอปพลิเคชันจริง นี่คือจุดที่ Mosaic อยู่และสิ่งที่อยู่รอบ ๆ"
 sidebar:
   order: 4
 ---
 
 ## Where Mosaic fits
 
-Mosaic เป็นส่วนหนึ่งของซีรีส์ **Real-World Projects** แต่ละโปรเจกต์หยิบแอปพลิเคชันจริงคนละตัวมา rebuild จาก repo เปล่า โดยตั้งใจดึงเอา slice ที่ต่างกันของคอร์ส Learn Hub มาใช้ — เพื่อว่าเมื่อรวมกันแล้ว พวกมันครอบคลุมเกือบทั้ง catalog Mosaic คือรายการ **micro-frontend**: ในขณะที่ตัวอื่นส่ง app เดียว Mosaic ส่ง *หลาย* app บน framework ต่างกัน compose เป็นตัวเดียว
+Mosaic เป็นส่วนหนึ่งของซีรีส์ **Real-World Projects** แต่ละโปรเจกต์หยิบแอปพลิเคชันจริงคนละตัวมา rebuild จาก repo เปล่า โดยตั้งใจดึงเอา slice ที่ต่างกันของคอร์ส Learn Hub มาใช้ — เพื่อว่าเมื่อรวมกันแล้วครอบคลุมเกือบทั้ง catalog Mosaic คือรายการ **micro-frontend**: โปรเจกต์อื่นส่ง app เดียว ส่วน Mosaic ส่ง *หลาย* app บน framework ต่างกัน compose เป็นตัวเดียว
 
 ## TaskFlow — realtime Kanban board ✅ live
 
@@ -17,7 +17,7 @@ board สไตล์ Trello ที่ทุกการเปลี่ยนแ
 
 ## DevBlog — headless CMS + blog ✅ live
 
-แพลตฟอร์ม content: author เขียนใน headless CMS แล้ว blog สาธารณะที่เร็วก็ render มันผ่าน **GraphQL** API พร้อม SSR และ ISR
+แพลตฟอร์ม content: author เขียนใน headless CMS แล้ว blog สาธารณะที่เร็วก็ render ออกมาผ่าน **GraphQL** API พร้อม SSR และ ISR
 
 - **Stack:** Node/NestJS + MongoDB + GraphQL + Next.js
 
@@ -42,8 +42,8 @@ storefront ที่ประกอบขึ้นจาก micro-frontend ท�
 
 ## The thread through the series
 
-ในขณะที่ ShopMicro แยก *backend* ออกเป็น service อิสระ Mosaic แยก *frontend* ออกเป็น app อิสระ — ไอเดียเชิงองค์กรอันเดียวกัน (ทีมอิสระ, deploy อิสระ, tech อิสระ) นำมาใช้ที่อีกปลายหนึ่งของ stack เมื่อรวมกันแล้ว พวกมันเป็นสองครึ่งของบทเรียนเดียวกันเรื่องการสร้างซอฟต์แวร์ที่หลายทีมส่งงานได้โดยไม่เหยียบเท้ากันเอง
+ShopMicro แยก *backend* ออกเป็น service อิสระ ส่วน Mosaic แยก *frontend* ออกเป็น app อิสระ — ไอเดียเชิงองค์กรอันเดียวกัน (ทีมอิสระ, deploy อิสระ, tech อิสระ) นำมาใช้ที่อีกปลายหนึ่งของ stack เมื่อรวมกันแล้วทั้งสองเป็นสองครึ่งของบทเรียนเดียวกันเรื่องการสร้างซอฟต์แวร์ที่หลายทีมส่งงานได้โดยไม่เหยียบเท้ากันเอง
 
-## Verify
+## ตรวจสอบผล
 
-คุณเข้าใจภาพรวมแล้วเมื่อคุณพูดได้อย่างละประโยคว่า Mosaic สร้างอะไร, มันดัดแปลง slice ไหนของ catalog และ "micro-frontend" เกี่ยวข้องกับไอเดีย microservices จาก ShopMicro อย่างไร ต่อไป เริ่ม [Module 1 · Setup & Tooling](/mosaic/th/setup/) ได้เลย
+คุณเข้าใจภาพรวมแล้วเมื่อคุณพูดได้อย่างละประโยคว่า Mosaic สร้างอะไร, ดัดแปลง slice ไหนของ catalog และ "micro-frontend" เกี่ยวข้องกับไอเดีย microservices จาก ShopMicro อย่างไร ต่อไป เริ่ม [Module 1 · Setup & Tooling](/mosaic/th/setup/) ได้เลย

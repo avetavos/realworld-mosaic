@@ -5,19 +5,19 @@ sidebar:
   order: 1
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
 error boundary และ fallback UI ครอบทุก remote ที่ shell mount ไว้ เพื่อว่าเมื่อ `remoteEntry.js` ของ remote ตัวใดโหลดไม่สำเร็จ — CDN ล่ม, deploy พัง, network สะดุด — slice นั้นจะโชว์ panel เล็ก ๆ ว่า "โหลดไม่ได้" ส่วน storefront ที่เหลือยังทำงานต่อได้ปกติ
 
-นี่คือบทแรกของ module เพราะมันบอกราคาที่คุณต้องจ่ายให้ runtime composition ใน single-page app ปกติ ทั้ง bundle จะโหลดสำเร็จหรือล้มเหลวพร้อมกันทีเดียว แต่ใน Mosaic [แต่ละ remote โหลดตอน runtime จาก URL ของตัวเอง](/mosaic/th/federation/) แปลว่าแต่ละ remote ล้มเหลวได้*แยกจากกัน* — และถ้า shell ไม่จัดการตรงนี้ remote ที่พังตัวเดียวจะลากทั้งหน้าล่มไปด้วย
+นี่คือบทแรกของ module เพราะบอกราคาที่คุณต้องจ่ายให้ runtime composition ใน single-page app ปกติ ทั้ง bundle จะโหลดสำเร็จหรือล้มเหลวพร้อมกันทีเดียว แต่ใน Mosaic [แต่ละ remote โหลดตอน runtime จาก URL ของตัวเอง](/mosaic/th/federation/) แปลว่าแต่ละ remote ล้มเหลวได้*แยกจากกัน* — และถ้า shell ไม่จัดการตรงนี้ remote ที่พังตัวเดียวจะลากทั้งหน้าล่มไปด้วย
 
-## Why
+## ทำไม
 
-`React.lazy(() => import('catalog/Catalog'))` คืน promise ออกมา เมื่อ import resolve `<Suspense>` จะสลับ fallback ออกแล้วแสดง component จริงแทน แต่ `<Suspense>` จัดการแค่สถานะ *pending* เท่านั้น — มันไม่มีคำตอบให้สถานะ *rejected* เลย ถ้า `remoteEntry.js` ตอบ 404 หรือ network หลุด promise นั้นจะ reject การ reject จะไหลขึ้นไปกลายเป็น render error และถ้าไม่มี boundary มันจะ unmount ทุกอย่างเหนือมันขึ้นไป ทั้ง shell — nav, session, cart badge, remote ตัวอื่น — จะจอเปล่า
+`React.lazy(() => import('catalog/Catalog'))` คืน promise ออกมา เมื่อ import resolve `<Suspense>` จะสลับ fallback ออกแล้วแสดง component จริงแทน แต่ `<Suspense>` จัดการแค่สถานะ *pending* เท่านั้น — ไม่มีคำตอบให้สถานะ *rejected* เลย ถ้า `remoteEntry.js` ตอบ 404 หรือ network หลุด promise นั้นจะ reject การ reject จะไหลขึ้นไปกลายเป็น render error และถ้าไม่มี boundary error จะ unmount ทุกอย่างที่อยู่เหนือขึ้นไป ทั้ง shell — nav, session, cart badge, remote ตัวอื่น — จะจอเปล่า
 
-**error boundary** ดักการ reject นั้นที่จุดที่คุณเลือกไว้ใน tree แล้ว render fallback แทนที่จะปล่อยให้มันไหลขึ้นไป วาง boundary ไว้รอบ remote แต่ละตัวโดยตรง แล้วรัศมีความเสียหายของ load ที่ล้มเหลวจะเท่ากับ slice เดียวพอดี นี่คือหลักการ isolation เดียวกับที่ service mesh ให้ microservices: dependency ตัวหนึ่งล่มจะทำให้ feature เดียว degrade ไม่ลามไปทั้งระบบ
+**error boundary** ดักการ reject นั้นที่จุดที่คุณเลือกไว้ใน tree แล้ว render fallback แทนที่จะปล่อยให้ไหลขึ้นไป วาง boundary ไว้รอบ remote แต่ละตัวโดยตรง แล้วรัศมีความเสียหายของ load ที่ล้มเหลวจะเท่ากับ slice เดียวพอดี นี่คือหลักการ isolation เดียวกับที่ service mesh ให้ microservices: dependency ตัวหนึ่งล่มจะทำให้ feature เดียว degrade ไม่ลามไปทั้งระบบ
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **One boundary per remote vs. one boundary around the whole app**
 
@@ -26,14 +26,14 @@ error boundary และ fallback UI ครอบทุก remote ที่ shel
 
 **Error boundary vs. a `try/catch` around the import**
 
-- **Pros (boundary):** ดักทั้ง rejection ตอน load *และ* render-time error ที่ถูก throw ข้างใน remote หลัง mount แล้ว ด้วยกลไกเดียว มันคือ seam ของ React ที่เป็น idiomatic สำหรับ "subtree นี้ล้มเหลว"
-- **Cons (boundary):** ต้องเป็น class component (หรือ wrapper อย่าง `react-error-boundary`) — ยังไม่มีรูปแบบ hook — และมันดักได้แค่ error ตอน render/lifecycle ไม่ใช่ข้างใน event handler ดังนั้น click handler ของ remote ยังต้อง guard ตัวเองอยู่ดี
+- **Pros (boundary):** ดักทั้ง rejection ตอน load *และ* render-time error ที่ถูก throw ข้างใน remote หลัง mount แล้ว ด้วยกลไกเดียว นี่คือ seam ของ React ที่เป็น idiomatic สำหรับ "subtree นี้ล้มเหลว"
+- **Cons (boundary):** ต้องเป็น class component (หรือ wrapper อย่าง `react-error-boundary`) — ยังไม่มีรูปแบบ hook — และดักได้แค่ error ตอน render/lifecycle ไม่ใช่ข้างใน event handler ดังนั้น click handler ของ remote ยังต้อง guard ตัวเองอยู่ดี
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `apps/shell/src/RemoteBoundary.tsx`
 
-error boundary เล็ก ๆ ที่มี retry มัน reset ได้ตามต้องการ ให้ failure ชั่วคราวลองใหม่ได้โดยไม่ต้อง reload ทั้งหน้า
+error boundary เล็ก ๆ ที่มี retry reset ได้ตามต้องการ ให้ failure ชั่วคราวลองใหม่ได้โดยไม่ต้อง reload ทั้งหน้า
 
 ```tsx
 import { Component, type ReactNode } from 'react';
@@ -97,11 +97,11 @@ export function MountCatalog() {
 }
 ```
 
-ลำดับสำคัญ: `RemoteBoundary` ต้องอยู่ *นอก* `Suspense` lazy import ที่ reject จะ throw ตอน render และมีแค่ boundary ที่อยู่เหนือ component ที่ throw เท่านั้นที่ดักมันได้
+ลำดับสำคัญ: `RemoteBoundary` ต้องอยู่ *นอก* `Suspense` lazy import ที่ reject จะ throw ตอน render และมีแค่ boundary ที่อยู่เหนือ component ที่ throw เท่านั้นที่ดักได้
 
 ### 3. `apps/shell/src/mountCart.tsx`
 
-[Svelte cart remote mount ผ่าน custom element](/mosaic/th/cart/) ดังนั้นรูปแบบ failure ของมันต่างออกไป: `import('cart/register')` reject ได้ก่อนที่ `<cart-app>` จะถูก define ด้วยซ้ำ ให้ guard ที่ตัว *registration* ไม่ใช่ที่ React component
+[Svelte cart remote mount ผ่าน custom element](/mosaic/th/cart/) รูปแบบ failure จึงต่างออกไป: `import('cart/register')` reject ได้ก่อนที่จะ define `<cart-app>` ได้ด้วยซ้ำ ให้ guard ที่ตัว *registration* ไม่ใช่ที่ React component
 
 ```tsx
 import { Component, type ReactNode } from 'react';
@@ -140,9 +140,9 @@ export function MountCart() {
 }
 ```
 
-เพราะการ reject ของ dynamic `import()` ตกอยู่ใน promise ไม่ใช่ใน render ของ React เราจึง re-throw มันออกมาจาก state updater เพื่อให้ boundary เห็นมันได้ นั่นคือ seam เดียวที่ failure ตอน load ต้องการการสะกิดเพื่อให้ไปถึง boundary
+เพราะการ reject ของ dynamic `import()` ตกอยู่ใน promise ไม่ใช่ใน render ของ React เราจึง re-throw ออกมาจาก state updater เพื่อให้ boundary มองเห็น นั่นคือ seam เดียวที่ failure ตอน load ต้องการการสะกิดเพื่อให้ไปถึง boundary
 
-## Verify
+## ตรวจสอบผล
 
 รัน shell กับ remote จริง จากนั้นเอา remote ตัวหนึ่ง offline แล้วยืนยันว่า shell ยังรอด
 
@@ -175,13 +175,13 @@ pnpm --filter shell build
 
 ตรวจสอบความเข้าใจ:
 
-1. `<Suspense>` โชว์ fallback ระหว่าง remote โหลดอยู่แล้ว ทำไมมันถึงไม่ครอบคลุมกรณี `remoteEntry.js` ตอบ 404?
+1. `<Suspense>` โชว์ fallback ระหว่าง remote โหลดอยู่แล้ว ทำไมจึงไม่ครอบคลุมกรณี `remoteEntry.js` ตอบ 404?
 2. ทำไม `RemoteBoundary` ต้องอยู่ *นอก* `<Suspense>` แทนที่จะอยู่ข้างใน?
-3. Svelte cart โหลดผ่าน `import('cart/register')` ไม่ใช่ `React.lazy` ทำไม failure ของมันจึงต้องถูก re-throw จาก state updater เพื่อให้ไปถึง boundary?
+3. Svelte cart โหลดผ่าน `import('cart/register')` ไม่ใช่ `React.lazy` ทำไม failure ของ cart จึงต้อง re-throw จาก state updater เพื่อให้ไปถึง boundary?
 4. ความต่างของ "blast radius" ระหว่าง one boundary per remote กับ boundary เดียวครอบทั้ง shell คืออะไร?
 
-## Recap
+## สรุป
 
 คุณครอบ remote แต่ละตัวไว้ใน error boundary เพื่อว่า `remoteEntry.js` ที่ล้มเหลวจะทำให้ slice เดียว degrade แทนที่จะทำให้ shell จอเปล่า — คือ isolation ที่ทำให้ runtime composition ปลอดภัย คุณจัดการทั้ง remote ที่เป็น React component (catalog) และ remote ที่เป็น custom element (cart) รวมถึง seam ของ rejection ตอน load ที่ต้อง re-throw แบบชัดเจน
 
-ต่อไป เราจะทำให้ composition *เร็ว* พอ ๆ กับที่มันปลอดภัย: [Lazy loading & dedupe →](/mosaic/th/resilience/lazy-and-dedupe/)
+ต่อไป เราจะทำให้ composition *เร็ว* พอ ๆ กับที่ปลอดภัย: [Lazy loading & dedupe →](/mosaic/th/resilience/lazy-and-dedupe/)

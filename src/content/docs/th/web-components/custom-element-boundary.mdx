@@ -1,25 +1,25 @@
 ---
 title: The Custom Element Boundary
-description: "wrap remote เป็น custom element เพื่อให้ host mount มันแบบ framework-agnostic — กุญแจสู่ multi-framework micro-frontend"
+description: "wrap remote เป็น custom element เพื่อให้ host mount ได้แบบ framework-agnostic — กุญแจสู่ multi-framework micro-frontend"
 sidebar:
   order: 1
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
-remote ที่ expose ตัวเองเป็น **custom element** — `<catalog-app>` — แทนที่จะเป็น React component remote ship module `./register` ที่ define element นั้น host import `register` แล้ว render tag เหมือน HTML ทั่วไป element จะ mount framework app ของ remote *ไว้ในตัวมันเอง* ตอนที่ browser เชื่อมมันเข้ากับ DOM
+remote ที่ expose ตัวเองเป็น **custom element** — `<catalog-app>` — แทนที่จะเป็น React component remote ship module `./register` ที่ define element นั้น host import `register` แล้ว render tag เหมือน HTML ทั่วไป element จะ mount framework app ของ remote *ไว้ในตัวเอง* ตอนที่ browser เชื่อมเข้ากับ DOM
 
-นี่คือ pattern `<x-app>` และเป็นไอเดียที่สำคัญที่สุดใน Mosaic เมื่อ remote เป็น custom element แล้ว host ไม่รู้และไม่สนว่า framework ไหนสร้างมัน นี่คือ boundary ที่ทำให้ [cart](/mosaic/th/cart/) ที่เป็น Svelte ถูก mount ใน React shell ได้ใน module ถัดไป
+นี่คือ pattern `<x-app>` และเป็นไอเดียที่สำคัญที่สุดใน Mosaic เมื่อ remote เป็น custom element แล้ว host ไม่รู้และไม่สนว่า framework ไหนสร้างขึ้นมา นี่คือ boundary ที่ทำให้ [cart](/mosaic/th/cart/) ที่เป็น Svelte ถูก mount ใน React shell ได้ใน module ถัดไป
 
-## Why
+## ทำไม
 
 [catalog](/mosaic/th/catalog/the-catalog-remote/) ทำงานได้เพราะ host กับ remote เป็น React ทั้งคู่ และ share React singleton ตัวเดียวกัน นั่นคือความบังเอิญที่มีความสุขจากการที่ทั้งคู่เป็นแบบเดียวกัน วินาทีที่ remote เป็น Svelte, Vue, หรือ Astro "แค่ render component" ก็เลิกทำงานทันที — ไม่มี runtime ที่ share กัน ไม่มี component model ที่ share กัน ไม่มีอะไรที่ React host เรียกได้
 
-custom element คือทางออก และมันเป็น **browser standard** ไม่ใช่ feature ของ framework ทุก framework render *ลงใน* DOM node ได้ และทุก framework render *tag* ได้ ดังนั้นเราตกลงกันที่สิ่งเดียวที่ทุกฝ่าย share กัน — DOM — แล้วใช้ `customElements.define()` เป็น contract หน้าที่ของ remote: "เมื่อคุณถูกวางบนหน้า จง mount app ของฉันไว้ในตัวคุณเอง" หน้าที่ของ host: "โหลด definition แล้ววาง tag" ไม่มีฝ่ายไหนต้องรู้จัก framework ของอีกฝ่าย
+custom element คือทางออก และเป็น **browser standard** ไม่ใช่ feature ของ framework ทุก framework render *ลงใน* DOM node ได้ และทุก framework render *tag* ได้ ดังนั้นเราตกลงกันที่สิ่งเดียวที่ทุกฝ่าย share กัน — DOM — แล้วใช้ `customElements.define()` เป็น contract หน้าที่ของ remote: "เมื่อคุณถูกวางบนหน้า จง mount app ของฉันไว้ในตัวคุณเอง" หน้าที่ของ host: "โหลด definition แล้ววาง tag" ไม่มีฝ่ายไหนต้องรู้จัก framework ของอีกฝ่าย
 
 การกลับด้านนั้น — remote เป็นเจ้าของการ mount ตัวเอง ส่วน host แค่วาง element — คือสิ่งที่ทำให้การประกอบเป็น framework-agnostic ของจริง
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **A custom element boundary vs. exposing a framework component**
 
@@ -31,11 +31,11 @@ custom element คือทางออก และมันเป็น **brow
 - **Pros (shadow):** style encapsulation — CSS ของ remote รั่วออกไม่ได้ และของ host รั่วเข้าไม่ได้ ซึ่งสำคัญเมื่อทีมอิสระ ship style อิสระ
 - **Cons (shadow):** design-system token ส่วนกลางและ third-party style บางตัวต้องถูกปล่อยให้เข้ามาอย่างจงใจ และบาง library สมมติว่าเป็น light DOM สำหรับการ mount ระดับ app นั้น light DOM มักจะง่ายกว่า เก็บ shadow root ไว้ให้ primitive ที่เบ็ดเสร็จในตัวเองอย่างตัวใน[บทถัดไป](/mosaic/th/web-components/a-shared-primitive/)
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `apps/catalog/src/register.ts`
 
-define custom element ที่ mount React `<Catalog>` ไว้ในตัวมันเองตอน connect แล้วรื้อมันทิ้งตอน disconnect guard การเรียก `define` เพื่อให้การ import `register` สองครั้งไม่ throw
+define custom element ที่ mount React `<Catalog>` ไว้ในตัวเองตอน connect แล้วรื้อทิ้งตอน disconnect guard การเรียก `define` เพื่อให้การ import `register` สองครั้งไม่ throw
 
 ```ts
 import { createElement } from 'react';
@@ -97,7 +97,7 @@ declare module 'react' {
 
 ### 4. `apps/shell/src/CatalogRoute.tsx`
 
-เรา import registrar เป็น side effect แล้ว render tag ไม่มี `React.lazy` ไม่มี `<Suspense>` สำหรับตัว component เอง — element mount React tree ของมันเอง host เป็นกลาง: มันแค่วาง element บนหน้า
+เรา import registrar เป็น side effect แล้ว render tag ไม่มี `React.lazy` ไม่มี `<Suspense>` สำหรับตัว component เอง — element mount React tree ของตัวเอง host เป็นกลาง: แค่วาง element บนหน้า
 
 ```tsx
 import { useEffect, useState } from 'react';
@@ -115,7 +115,7 @@ export function CatalogRoute() {
 }
 ```
 
-## Verify
+## ตรวจสอบผล
 
 รัน remote กับ shell ด้วยกันแล้วโหลด catalog page:
 
@@ -142,15 +142,15 @@ pnpm --filter catalog build
 # vite build completes; remoteEntry.js now exposes both ./Catalog and ./register.
 ```
 
-สัญญาณว่านี่ได้ผล: shell render catalog โดยมองมันเป็น HTML ทึบ ๆ สลับไส้ในของ remote เป็น framework อื่น แล้วบรรทัด `<catalog-app />` เดิมนี้ก็จะยังทำงานต่อไป
+สัญญาณว่านี่ได้ผล: shell render catalog โดยมองเป็น HTML ทึบ ๆ สลับไส้ในของ remote เป็น framework อื่น แล้วบรรทัด `<catalog-app />` เดิมนี้ก็จะยังทำงานต่อไป
 
 ตรวจสอบความเข้าใจ:
 
 1. ทำไม "แค่ render component" ถึงเลิกทำงานทันทีที่ remote สร้างด้วย framework คนละตัวกับ host?
 2. `connectedCallback` ทำอะไรตรงนี้ และทำไมถึง mount React tree ตรงนั้นแทนที่จะใน constructor?
-3. ทำไม host ถึง import `catalog/register` เพื่อ *side effect* ของมัน แทนที่จะ import component?
-4. เมื่อไหร่คุณจะ mount ลง shadow root และมันแลกอะไรไปสำหรับ remote ระดับ app?
+3. ทำไม host ถึง import `catalog/register` เพื่อ *side effect* แทนที่จะ import component?
+4. เมื่อไหร่คุณจะ mount ลง shadow root และแลกอะไรไปสำหรับ remote ระดับ app?
 
-## Recap
+## สรุป
 
 คุณ wrap remote เป็น custom element: remote เป็นเจ้าของการ mount ตัวเองผ่าน `connectedCallback` ส่วน host แค่ import registrar แล้ววาง `<catalog-app>` นั่นคือ framework-agnostic boundary ที่ทั้ง architecture พึ่งพา — และเป็นกลไกเป๊ะ ๆ ที่ Svelte cart จะใช้ใน [Module 6](/mosaic/th/cart/) ต่อไป เอา standard เดียวกันนี้ไปใช้ *ลงล่าง* กับ shared UI primitive ตัวเดียว: [A Shared Primitive →](/mosaic/th/web-components/a-shared-primitive/)

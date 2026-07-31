@@ -5,21 +5,21 @@ sidebar:
   order: 2
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
-`<m-price cents="1299">` — Web Component ที่ format ราคาแล้ว render มันไว้ใน shadow root พร้อม style ของตัวเอง มันเป็นชิ้นแรกของ **design system** ที่ share กันใน Mosaic และเพราะมันเป็น custom element ทุก framework ในโปรเจกต์จึงใช้มันด้วยการเขียน tag เดียวกัน React, Svelte, และ Astro ทั้งหมด render `<m-price cents="…">` แล้วได้ราคาที่เหมือนกันและสม่ำเสมอ
+`<m-price cents="1299">` — Web Component ที่ format ราคาแล้ว render ไว้ใน shadow root พร้อม style ของตัวเอง นี่เป็นชิ้นแรกของ **design system** ที่ share กันใน Mosaic และเพราะเป็น custom element ทุก framework ในโปรเจกต์จึงใช้ได้ด้วยการเขียน tag เดียวกัน React, Svelte, และ Astro ทั้งหมด render `<m-price cents="…">` แล้วได้ราคาที่เหมือนกันและสม่ำเสมอ
 
 [บทก่อน](/mosaic/th/web-components/custom-element-boundary/) ใช้ custom element เพื่อ mount *ทั้ง app* บทนี้ใช้ standard เดียวกันในสเกลตรงข้าม — *UI atom* ที่ใช้ซ้ำได้เล็ก ๆ — เพื่อแสดงว่า boundary ทำงานได้ทั้งสองทาง
 
-## Why
+## ทำไม
 
-micro-frontend ทำให้ UI แตกเป็นเสี่ยง: สาม framework, สามทีม, สามโอกาสที่ราคาหรือปุ่ม "อันเดียวกัน" จะดูต่างกันนิด ๆ design system ที่ share กันคือยาแก้ — แต่ *วิธี* ที่คุณ share มันข้าม framework คือส่วนที่ยาก ship มันเป็น React component แล้ว Svelte ใช้ไม่ได้ ship สามชุดแล้วมันก็เลื่อนไหลออกจากกัน
+micro-frontend ทำให้ UI แตกเป็นเสี่ยง: สาม framework, สามทีม, สามโอกาสที่ราคาหรือปุ่ม "อันเดียวกัน" จะดูต่างกันนิด ๆ design system ที่ share กันคือยาแก้ — แต่ *วิธี* share ข้าม framework คือส่วนที่ยาก ship เป็น React component แล้ว Svelte ใช้ไม่ได้ ship สามชุดแล้วก็เลื่อนไหลออกจากกัน
 
-Web Component ถูก ship **ครั้งเดียว** และ consume **ทุกที่** เพราะ tag เป็น browser primitive `<m-price>` encapsulate logic การ format และ style ของมันไว้หลัง shadow root ดังนั้นมันดูเหมือนกันไม่ว่าจะไปตกอยู่บนหน้าของ framework ไหน และไม่มี host CSS ตัวไหน restyle มันโดยบังเอิญได้ ทีม design-system เป็นเจ้าของ implementation เดียว ส่วน consumer แค่เขียน tag
+Web Component ship **ครั้งเดียว** แล้ว consume **ทุกที่** เพราะ tag เป็น browser primitive `<m-price>` encapsulate logic การ format และ style ของตัวเองไว้หลัง shadow root จึงดูเหมือนกันไม่ว่าจะไปตกอยู่บนหน้าของ framework ไหน และไม่มี host CSS ตัวไหน restyle ได้โดยบังเอิญ ทีม design-system เป็นเจ้าของ implementation เดียว ส่วน consumer แค่เขียน tag
 
-ประเด็นเรื่อง format-ที่-เดียวสำคัญเกินกว่าเรื่องหน้าตา: เงินเป็นสิ่งที่คุณไม่มีวันอยากให้สามทีมต่างคนต่างปัดเศษเอง เอามันใส่ไว้ใน primitive แล้วทุก framework ก็ได้คำตอบเดียวกันฟรี ๆ
+ประเด็นเรื่อง format-ที่-เดียวสำคัญเกินกว่าเรื่องหน้าตา: เงินเป็นสิ่งที่คุณไม่มีวันอยากให้สามทีมต่างคนต่างปัดเศษเอง ย้ายเรื่องนี้ไปไว้ใน primitive แล้วทุก framework ก็ได้คำตอบเดียวกันฟรี ๆ
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **A design-system primitive as a Web Component vs. a per-framework component library**
 
@@ -31,11 +31,11 @@ Web Component ถูก ship **ครั้งเดียว** และ consum
 - **Pros (attribute):** ทำงานแบบ declarative จาก HTML, SSR, และ template ของทุก framework — `<m-price cents="1299">` ไม่ต้องใช้ JavaScript ต่อสายเลย
 - **Cons (attribute):** attribute เป็น string เสมอและพา primitive ได้เท่านั้น ดังนั้น data ซับซ้อน (object, array) ต้องผ่าน property หรือ JSON สำหรับตัวเลขเดียวอย่าง `cents` attribute คือทางเลือกที่ถูกและง่ายที่สุด — จึงมี `observedAttributes`
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `packages/design-system/src/m-price.ts`
 
-autonomous custom element มัน observe attribute `cents`, re-render เมื่อมันเปลี่ยน, และเก็บ markup กับ CSS ไว้ใน shadow root เพื่อไม่ให้อะไรข้างนอก restyle มันได้
+autonomous custom element ตัวนี้ observe attribute `cents`, re-render เมื่อค่าเปลี่ยน, และเก็บ markup กับ CSS ไว้ใน shadow root เพื่อไม่ให้อะไรข้างนอก restyle ได้
 
 ```ts
 class MPrice extends HTMLElement {
@@ -122,9 +122,9 @@ import '@mosaic/design-system/m-price';
 <m-price cents="1299" />
 ```
 
-## Verify
+## ตรวจสอบผล
 
-การเช็คที่เร็วที่สุดไม่ต้องใช้ framework เลย — Web Component ก็แค่ HTML วางมันลงในหน้าทดสอบ:
+การเช็คที่เร็วที่สุดไม่ต้องใช้ framework เลย — Web Component ก็แค่ HTML วางลงในหน้าทดสอบ:
 
 ```html
 <script type="module" src="/packages/design-system/src/m-price.ts"></script>
@@ -132,7 +132,7 @@ import '@mosaic/design-system/m-price';
 <!-- renders: $12.99 -->
 ```
 
-ใน browser console ยืนยันว่ามันถูก register และ reactive:
+ใน browser console ยืนยันว่า register แล้วและ reactive จริง:
 
 ```js
 customElements.get('m-price');
@@ -154,9 +154,9 @@ pnpm --filter @mosaic/design-system build
 
 1. ทำไม Web Component ตัวเดียวถึง consume ได้โดย React, Svelte, และ Astro ทั้งที่ React component ทำไม่ได้?
 2. shadow root ให้อะไรกับ `<m-price>` และทำไมสิ่งนั้นถึงสำคัญข้าม micro-frontend ที่ style อิสระจากกัน?
-3. ทำไม `observedAttributes` ถึงลิสต์ `cents` และอะไรจะ update ไม่ได้ถ้าละมันไว้?
+3. ทำไม `observedAttributes` ถึงลิสต์ `cents` และอะไรจะ update ไม่ได้ถ้าละไว้?
 4. เมื่อไหร่คุณจะส่ง data เป็น DOM property แทน attribute และทำไม `cents` ถึงโอเคเป็น attribute?
 
-## Recap
+## สรุป
 
-`<m-price>` คือ implementation เดียวของราคา ship ครั้งเดียวและ render โดยทุก framework ด้วย tag เดียวกัน — style ที่ encapsulate ไว้ ที่เดียวสำหรับการ format เงิน นั่นคือรากฐานของ design system (Module 10 ขยายมันเป็น `<m-button>`, `<m-card>`, และ tokens) ตอนนี้คุณเห็น custom-element boundary ทั้งสองสเกลแล้ว: ทั้ง app และ primitive เดี่ยว ต่อไป เอามันไปใช้จริงบน framework *อีกตัว* — Svelte remote ที่ mount ผ่าน web component: [Cart Remote (Svelte) →](/mosaic/th/cart/)
+`<m-price>` คือ implementation เดียวของราคา ship ครั้งเดียวและ render โดยทุก framework ด้วย tag เดียวกัน — style ที่ encapsulate ไว้ ที่เดียวสำหรับการ format เงิน นั่นคือรากฐานของ design system (Module 10 ขยายเป็น `<m-button>`, `<m-card>`, และ tokens) ตอนนี้คุณเห็น custom-element boundary ทั้งสองสเกลแล้ว: ทั้ง app และ primitive เดี่ยว ต่อไป เอาไปใช้จริงบน framework *อีกตัว* — Svelte remote ที่ mount ผ่าน web component: [Cart Remote (Svelte) →](/mosaic/th/cart/)

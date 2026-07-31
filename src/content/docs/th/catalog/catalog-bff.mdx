@@ -5,21 +5,21 @@ sidebar:
   order: 2
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
 **backend-for-frontend** ของ catalog: Hono service เล็ก ๆ บน port 4001 ที่ serve `GET /api/products` และ `GET /api/products/:id` จาก in-memory data แล้วเราต่อสาย [catalog remote](/mosaic/th/catalog/the-catalog-remote/) ใหม่ให้ fetch จาก endpoint นั้นแทนการใช้ array ที่ hard-code ไว้
 
-ประเด็นของบทนี้คือ **vertical slice** หลังจากนี้ catalog เป็นเจ้าของทั้งสองครึ่งของ feature ตัวเอง — ทั้ง UI *และ* data ที่ป้อนให้มัน — แล้ว deploy ได้จบครบวงจรโดยไม่ต้องแตะโค้ดของทีมอื่นเลย
+ประเด็นของบทนี้คือ **vertical slice** หลังจากนี้ catalog เป็นเจ้าของทั้งสองครึ่งของ feature ตัวเอง — ทั้ง UI *และ* data ที่ป้อนเข้ามา — แล้ว deploy ได้จบครบวงจรโดยไม่ต้องแตะโค้ดของทีมอื่นเลย
 
-## Why
+## ทำไม
 
-micro-frontend ที่เอื้อมไปหา API ส่วนกลางที่ share กันนั้นอิสระแค่ครึ่งเดียว: เปลี่ยน shape ของ product แล้วคุณต้องไปประสานงานกับคนที่เป็นเจ้าของ API นั้นทันที **BFF บาง ๆ ต่อหนึ่ง remote** ตัดสายนั้นทิ้ง BFF ของ catalog มีอยู่เพื่อ serve สิ่งที่ catalog UI ต้องการเป๊ะ ๆ ใน shape ที่มันอยากได้เป๊ะ ๆ เป็นเจ้าของโดยทีมเดียวกัน deploy ใน slice เดียวกัน
+micro-frontend ที่เอื้อมไปหา API ส่วนกลางที่ share กันนั้นอิสระแค่ครึ่งเดียว: เปลี่ยน shape ของ product แล้วคุณต้องไปประสานงานกับคนที่เป็นเจ้าของ API นั้นทันที **BFF บาง ๆ ต่อหนึ่ง remote** ตัดสายนั้นทิ้ง BFF ของ catalog มีอยู่เพื่อ serve สิ่งที่ catalog UI ต้องการเป๊ะ ๆ ใน shape ที่ต้องการเป๊ะ ๆ เป็นเจ้าของโดยทีมเดียวกัน deploy ใน slice เดียวกัน
 
-Hono เป็นเครื่องมือที่ถูกต้องเพราะมันเล็กและน่าเบื่อ — route ไม่กี่ตัวบน `Request`/`Response` มาตรฐาน Web รันบน Node ด้วย `@hono/node-server` ไม่มีพิธีรีตองของ framework มากวนใจให้เขวจาก architecture BFF ไม่ใช่จุดที่ engineering น่าสนใจอยู่ การเก็บมันให้บางคือประเด็นทั้งหมด
+Hono เป็นเครื่องมือที่ถูกต้องเพราะเล็กและน่าเบื่อ — route ไม่กี่ตัวบน `Request`/`Response` มาตรฐาน Web รันบน Node ด้วย `@hono/node-server` ไม่มีพิธีรีตองของ framework มากวนใจให้เขวจาก architecture BFF ไม่ใช่จุดที่ engineering น่าสนใจอยู่ การเก็บ BFF ให้บางคือประเด็นทั้งหมด
 
-มีการตัดสินใจจริงหนึ่งอย่างโผล่ขึ้นมาตรงนี้: **remote เอื้อมไปหา BFF ของมันยังไง** เมื่อ catalog รันแยกเดี่ยว ๆ บน 5001 การใช้ `/api/products` แบบ relative ก็ง่าย แต่พอ [shell](/mosaic/th/shell/) mount remote เข้าไป origin ของหน้าคือ 5000 — relative fetch จะไปโดน shell ไม่ใช่ BFF ของ catalog ดังนั้น remote จึง fetch BFF ที่ **absolute origin ที่ตั้งค่าได้** และ BFF เปิด CORS นี่คือ pattern ที่รอดจาก federation และเป็นสิ่งที่ [Independent Deployment](/mosaic/th/deployment/) ในภายหลังจะชี้ไปที่ URL ที่ deploy แล้วผ่าน env
+มีการตัดสินใจจริงหนึ่งอย่างโผล่ขึ้นมาตรงนี้: **remote เอื้อมไปหา BFF ของตัวเองยังไง** เมื่อ catalog รันแยกเดี่ยว ๆ บน 5001 การใช้ `/api/products` แบบ relative ก็ง่าย แต่พอ [shell](/mosaic/th/shell/) mount remote เข้าไป origin ของหน้าคือ 5000 — relative fetch จะไปโดน shell ไม่ใช่ BFF ของ catalog ดังนั้น remote จึง fetch BFF ที่ **absolute origin ที่ตั้งค่าได้** และ BFF เปิด CORS นี่คือ pattern ที่รอดจาก federation และเป็นสิ่งที่ [Independent Deployment](/mosaic/th/deployment/) ในภายหลังจะชี้ไปที่ URL ที่ deploy แล้วผ่าน env
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **A thin BFF per remote vs. one shared central API**
 
@@ -28,10 +28,10 @@ Hono เป็นเครื่องมือที่ถูกต้องเ
 
 **Fetching the BFF at an absolute origin vs. a relative `/api` path**
 
-- **Pros:** absolute origin ที่ตั้งค่าผ่าน env ทำงานเหมือนกันเป๊ะ ไม่ว่า remote จะรันแยกเดี่ยวหรือ mount อยู่ใน host คนละ origin มันคือกลไกเดียวกับที่คุณจะชี้ไป production URL ใน Module 13
-- **Cons:** มันบังคับให้คุณต้องจัดการ CORS และร้อย env var ผ่านเข้าไป การใช้ `/api` แบบ relative กับ Vite dev proxy ตั้งค่าน้อยกว่า — แต่มันพังเงียบ ๆ ทันทีที่ remote ถูก federate เข้าไปใน host บน origin อื่น ซึ่งเป็นเหตุผลทั้งหมดที่ remote นี้มีอยู่
+- **Pros:** absolute origin ที่ตั้งค่าผ่าน env ทำงานเหมือนกันเป๊ะ ไม่ว่า remote จะรันแยกเดี่ยวหรือ mount อยู่ใน host คนละ origin นี่คือกลไกเดียวกับที่คุณจะชี้ไป production URL ใน Module 13
+- **Cons:** วิธีนี้บังคับให้คุณต้องจัดการ CORS และร้อย env var ผ่านเข้าไป การใช้ `/api` แบบ relative กับ Vite dev proxy ตั้งค่าน้อยกว่า — แต่พังเงียบ ๆ ทันทีที่ remote ถูก federate เข้าไปใน host บน origin อื่น นั่นคือเหตุผลทั้งหมดที่ remote นี้มีอยู่
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `apps/catalog/bff/products.ts`
 
@@ -55,7 +55,7 @@ export const products: Product[] = [
 
 ### 2. `apps/catalog/bff/server.ts`
 
-Hono app: สอง route, CORS สำหรับ path `/api/*` (เพื่อให้ origin ของ shell เรียกมันได้) serve บน 4001 ด้วย `@hono/node-server`
+Hono app: สอง route, CORS สำหรับ path `/api/*` (เพื่อให้ origin ของ shell เรียกได้) serve บน 4001 ด้วย `@hono/node-server`
 
 ```ts
 import { serve } from '@hono/node-server';
@@ -128,7 +128,7 @@ export default function Catalog() {
 }
 ```
 
-## Verify
+## ตรวจสอบผล
 
 เริ่ม BFF แล้วยิงทั้งสอง route ตรง ๆ:
 
@@ -148,7 +148,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4001/api/products/nope
 # 404
 ```
 
-ตอนนี้รัน remote กับ BFF ด้วยกันแล้วโหลด catalog ใน shell — grid ควร render จาก data ที่ fetch มา และ CORS header ควรยอมให้ origin ของ shell (5000) อ่านมันได้:
+ตอนนี้รัน remote กับ BFF ด้วยกันแล้วโหลด catalog ใน shell — grid ควร render จาก data ที่ fetch มา และ CORS header ควรยอมให้ origin ของ shell (5000) อ่านได้:
 
 ```bash
 pnpm --filter catalog dev        # remote on 5001
@@ -170,8 +170,8 @@ pnpm --filter catalog build
 1. ทำไมแต่ละ remote ถึงได้ BFF บาง ๆ ของตัวเอง แทนที่จะให้ทุก remote เรียก API ส่วนกลางตัวเดียว?
 2. เมื่อ remote ถูก mount ใน shell ทำไม `fetch('/api/products')` แบบ relative ถึงไปโดน server ผิดตัว — และวิธี absolute-origin แก้อะไร?
 3. ทำไม BFF ถึงต้องมี `cors()` บน `/api/*` ทั้งที่ remote กับ BFF เป็นโค้ดของทีมเดียวกัน?
-4. อะไรทำให้ catalog เป็น "vertical slice" ตอนนี้ ที่มันยังไม่เป็นในบทก่อน?
+4. อะไรทำให้ catalog เป็น "vertical slice" ตอนนี้ ที่ยังไม่เป็นในบทก่อน?
 
-## Recap
+## สรุป
 
 catalog เป็น vertical slice ที่สมบูรณ์: React remote ที่ federate เข้าไปใน shell มี Hono BFF ของตัวเองหนุนหลัง fetch data จริงข้าม CORS boundary ที่ origin ที่ตั้งค่าได้ — deploy ได้ครบวงจรด้วยตัวเอง จนถึงตอนนี้ทุก remote เป็น React ที่ mount เข้าไปใน host ที่เป็น React ต่อไปเราจะทำลายสมมติฐานนั้น: [Web Components Interop →](/mosaic/th/web-components/) ทำให้ remote ถูก mount ได้โดย framework *ใดก็ได้*

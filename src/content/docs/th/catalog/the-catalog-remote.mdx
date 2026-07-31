@@ -5,35 +5,35 @@ sidebar:
   order: 1
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
-catalog คือ **remote** ตัวจริงตัวแรกของ Mosaic: React + Vite app ที่รันแยกเดี่ยว ๆ แล้ว expose component ตัวเดียว — `<Catalog>` ซึ่งเป็น product grid — ออกมาเป็น federated module มันรันบน port ของตัวเอง (5001) build `remoteEntry.js` ของตัวเอง แล้ว [shell](/mosaic/th/shell/) โหลดมันตอน runtime แล้ววางลงในหน้า ไม่มีใคร import catalog ตอน build time เลย shell ค้นเจอมันผ่าน HTTP
+catalog คือ **remote** ตัวจริงตัวแรกของ Mosaic: React + Vite app ที่รันแยกเดี่ยว ๆ แล้ว expose component ตัวเดียว — `<Catalog>` ที่เป็น product grid — ออกมาเป็น federated module catalog รันบน port ของตัวเอง (5001) build `remoteEntry.js` ของตัวเอง แล้ว [shell](/mosaic/th/shell/) โหลดตอน runtime แล้ววางลงในหน้า ไม่มีใคร import catalog ตอน build time เลย shell ค้นเจอผ่าน HTTP
 
-ในบทนี้ grid render product list สั้น ๆ ที่ hard-code ไว้ เพื่อให้เราโฟกัสที่ federation boundary [บทถัดไป](/mosaic/th/catalog/catalog-bff/) จะให้ remote มี Hono BFF ของตัวเองแล้วทำให้ data เป็นของจริง — เปลี่ยนมันเป็น vertical slice เต็มรูปแบบ
+ในบทนี้ grid render product list สั้น ๆ ที่ hard-code ไว้ เพื่อให้เราโฟกัสที่ federation boundary [บทถัดไป](/mosaic/th/catalog/catalog-bff/) จะให้ remote มี Hono BFF ของตัวเองแล้วทำให้ data เป็นของจริง — เปลี่ยนเป็น vertical slice เต็มรูปแบบ
 
-## Why
+## ทำไม
 
-เราเรียนกลไกไปแล้วใน [Module Federation Core](/mosaic/th/federation/): expose module, consume มันจาก `remoteEntry.js`, share `react` เป็น singleton catalog คือจุดที่ของพวกนี้เลิกเป็น `./Widget` ของเล่น แล้วกลายเป็น feature จริงที่ทีมหนึ่งเป็นเจ้าของ
+เราเรียนกลไกไปแล้วใน [Module Federation Core](/mosaic/th/federation/): expose module, consume จาก `remoteEntry.js`, share `react` เป็น singleton catalog คือจุดที่ของพวกนี้เลิกเป็น `./Widget` ของเล่น แล้วกลายเป็น feature จริงที่ทีมหนึ่งเป็นเจ้าของ
 
-การ expose **React component** (ไม่ใช่ custom element) เป็นทางเลือกที่ถูกตรงนี้ เพราะ host ก็เป็น React เมื่อทั้งสองฝั่ง share `react`/`react-dom` singleton ตัวเดียวกัน component ของ remote ก็เป็นแค่ component ตัวหนึ่งสำหรับ shell — มันรับ props, โยน error ไปที่ error boundary, และเข้าร่วม Suspense เหมือน component local ทั่วไป การ interop แบบ framework เดียวกันที่แนบแน่นนี้คือ remote ที่เรียบง่ายที่สุดเท่าที่จะเป็นได้ ซึ่งเป็นเหตุผลว่าทำไมมันถึงเป็นตัวแรกที่ควรสร้าง (Module 5 จะขยายไปสู่เคสที่ framework-agnostic)
+การ expose **React component** (ไม่ใช่ custom element) เป็นทางเลือกที่ถูกตรงนี้ เพราะ host ก็เป็น React เมื่อทั้งสองฝั่ง share `react`/`react-dom` singleton ตัวเดียวกัน component ของ remote ก็เป็นแค่ component ตัวหนึ่งสำหรับ shell — รับ props, โยน error ไปที่ error boundary, และเข้าร่วม Suspense เหมือน component local ทั่วไป การ interop แบบ framework เดียวกันที่แนบแน่นนี้คือ remote ที่เรียบง่ายที่สุดเท่าที่จะเป็นได้ จึงเป็นเหตุผลว่าทำไมถึงเป็นตัวแรกที่ควรสร้าง (Module 5 จะขยายไปสู่เคสที่ framework-agnostic)
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **Exposing a React component vs. exposing a custom element**
 
 - **Pros:** shell render `<Catalog />` ได้ตรง ๆ — props, context, Suspense, และ error boundary ทำงานได้หมดโดยไม่ต้องมี glue เลย React instance เดียวที่ share กันแปลว่าไม่มีการ render ซ้ำ และไม่มี runtime ซ้ำถูกส่งไปที่ browser
-- **Cons:** มันทำงานได้เพราะ host เป็น React เท่านั้น host ที่เป็น Vue หรือ Svelte จะ consume remote นี้ไม่ได้ถ้าไม่มี wrapper คุณแลกความเป็นสากลไปกับความเรียบง่าย — ตอนนี้โอเค แต่นี่คือเหตุผลที่ Module 5 มีอยู่
+- **Cons:** วิธีนี้ทำงานได้เพราะ host เป็น React เท่านั้น host ที่เป็น Vue หรือ Svelte จะ consume remote นี้ไม่ได้ถ้าไม่มี wrapper คุณแลกความเป็นสากลไปกับความเรียบง่าย — ตอนนี้โอเค แต่นี่คือเหตุผลที่ Module 5 มีอยู่
 
 **Runtime federation vs. publishing the catalog as an npm package**
 
-- **Pros:** federated remote deploy อิสระได้ ship catalog ตัวใหม่แล้ว shell หยิบมันขึ้นมาในการโหลดครั้งถัดไป — ไม่ต้อง rebuild shell, ไม่ต้อง bump version, ไม่ต้อง release พร้อมกัน
-- **Cons:** ตอนนี้คุณพึ่ง network fetch ตอน runtime ดังนั้น remote อาจช้าหรือเข้าถึงไม่ได้ (ปัญหาของ Module 12) npm package เข้าใจง่ายกว่า แต่มันผูกทุก consumer เข้ากับวงจร rebuild-แล้ว-redeploy — การผูกกันแบบนี้แหละที่ micro-frontend เกิดมาเพื่อทำลาย
+- **Pros:** federated remote deploy อิสระได้ ship catalog ตัวใหม่แล้ว shell หยิบขึ้นมาในการโหลดครั้งถัดไป — ไม่ต้อง rebuild shell, ไม่ต้อง bump version, ไม่ต้อง release พร้อมกัน
+- **Cons:** ตอนนี้คุณพึ่ง network fetch ตอน runtime ดังนั้น remote อาจช้าหรือเข้าถึงไม่ได้ (ปัญหาของ Module 12) npm package เข้าใจง่ายกว่า แต่ผูกทุก consumer เข้ากับวงจร rebuild-แล้ว-redeploy — การผูกกันแบบนี้แหละที่ micro-frontend เกิดมาเพื่อทำลาย
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `apps/catalog/vite.config.ts`
 
-federation config ของ remote มันตั้งชื่อตัวเอง, เขียน `remoteEntry.js`, expose `./Catalog`, และ share React เพื่อให้ singleton ของ host ถูกใช้ซ้ำ `server.origin` ต้องตรงกับ port เพื่อให้ asset URL ที่ถูก generate เป็น absolute และถูกต้อง
+federation config ของ remote ตั้งชื่อตัวเอง, เขียน `remoteEntry.js`, expose `./Catalog`, และ share React เพื่อให้ singleton ของ host ถูกใช้ซ้ำ `server.origin` ต้องตรงกับ port เพื่อให้ asset URL ที่ generate ออกมาเป็น absolute และถูกต้อง
 
 ```ts
 import { defineConfig } from 'vite';
@@ -126,9 +126,9 @@ export function CatalogRoute() {
 }
 ```
 
-## Verify
+## ตรวจสอบผล
 
-เริ่ม remote แยกเดี่ยว ๆ แล้วยืนยันว่ามัน publish manifest:
+เริ่ม remote แยกเดี่ยว ๆ แล้วยืนยันว่า publish manifest ออกมาจริง:
 
 ```bash
 pnpm --filter catalog dev
@@ -157,15 +157,15 @@ pnpm --filter catalog build
 # vite build completes; dist/ contains remoteEntry.js plus the exposed chunk.
 ```
 
-ถ้า grid render อยู่ใน shell แต่โค้ดอยู่ใน `apps/catalog` แสดงว่า boundary ทำงาน — shell กำลังรัน component ที่มันไม่เคย import ตอน build time
+ถ้า grid render อยู่ใน shell แต่โค้ดอยู่ใน `apps/catalog` แสดงว่า boundary ทำงาน — shell กำลังรัน component ที่ตัวเองไม่เคย import ตอน build time
 
 ตรวจสอบความเข้าใจ:
 
-1. ทำไม shell ถึงเห็น `<Catalog />` เป็น React component ธรรมดา แทนที่จะเป็นอะไรที่มันต้อง wrap หรือ bridge?
-2. `server.origin` ใน Vite config ของ remote มีบทบาทอะไร และอะไรจะพังถ้ามันไม่ตรงกับ port?
+1. ทำไม shell ถึงเห็น `<Catalog />` เป็น React component ธรรมดา แทนที่จะเป็นอะไรที่ต้อง wrap หรือ bridge?
+2. `server.origin` ใน Vite config ของ remote มีบทบาทอะไร และอะไรจะพังถ้าค่าไม่ตรงกับ port?
 3. ทำไมต้อง wrap การ import `<Catalog>` ด้วย `React.lazy` + `<Suspense>` แทนที่จะเป็น top-level `import` ธรรมดา?
-4. remote นี้ consume ได้เฉพาะ host ที่เป็น React module ตัวไหนในภายหลังที่ลบข้อจำกัดนี้ออก และมันใช้ boundary แบบไหนแทน?
+4. remote นี้ consume ได้เฉพาะ host ที่เป็น React module ตัวไหนในภายหลังที่ลบข้อจำกัดนี้ออก และใช้ boundary แบบไหนแทน?
 
-## Recap
+## สรุป
 
-ตอนนี้ catalog เป็น federated remote ของจริงแล้ว: React app ที่ expose `<Catalog>` grid และ shell ที่ mount มันตอน runtime ด้วย `React.lazy` + `<Suspense>` โดย share React singleton ตัวเดียว มันเป็น deploy อิสระอยู่แล้ว — แต่ data ยังปลอมอยู่ ต่อไป ให้มันมี backend ของตัวเองแล้วเติม vertical slice ให้ครบใน [The Catalog BFF →](/mosaic/th/catalog/catalog-bff/)
+ตอนนี้ catalog เป็น federated remote ของจริงแล้ว: React app ที่ expose `<Catalog>` grid และ shell ที่ mount ตอน runtime ด้วย `React.lazy` + `<Suspense>` โดย share React singleton ตัวเดียว catalog deploy อิสระได้อยู่แล้ว — แต่ data ยังปลอมอยู่ ต่อไป ให้ catalog มี backend ของตัวเองแล้วเติม vertical slice ให้ครบใน [The Catalog BFF →](/mosaic/th/catalog/catalog-bff/)

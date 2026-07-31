@@ -5,33 +5,33 @@ sidebar:
   order: 2
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
-shell กลายเป็น **host** เราเพิ่ม `@module-federation/vite` plugin เข้า Vite config ของ shell, ประกาศ remote `catalog` และ `cart` ด้วย URL `remoteEntry.js` ของมัน, แชร์ React เป็น singleton แล้วโหลด catalog remote ตอน runtime ด้วย `React.lazy(() => import('catalog/Catalog'))` หลัง `<Suspense>`
+shell กลายเป็น **host** เราเพิ่ม `@module-federation/vite` plugin เข้า Vite config ของ shell, ประกาศ remote `catalog` และ `cart` ด้วย URL `remoteEntry.js` ของแต่ละตัว, แชร์ React เป็น singleton แล้วโหลด catalog remote ตอน runtime ด้วย `React.lazy(() => import('catalog/Catalog'))` หลัง `<Suspense>`
 
-ตัว catalog remote เองยังไม่มีอยู่ — มันสร้างใน [Module 4](/mosaic/th/catalog/) สิ่งที่เราสร้างตรงนี้คือ *ฝั่ง host* ของ contract: config และโค้ดโหลด พร้อมให้ remote จริงมาทำให้ครบ นี่คือ config ที่ทุก module ถัดไปพึ่งว่าต้องถูกต้องเป๊ะ เราจึงทำตามอย่างละเอียด
+ตัว catalog remote เองยังไม่มีอยู่ — เราจะสร้างใน [Module 4](/mosaic/th/catalog/) สิ่งที่เราสร้างตรงนี้คือ *ฝั่ง host* ของ contract: config และโค้ดโหลด พร้อมให้ remote จริงมาทำให้ครบ นี่คือ config ที่ทุก module ถัดไปพึ่งว่าต้องถูกต้องเป๊ะ เราจึงทำตามอย่างละเอียด
 
-## Why
+## ทำไม
 
-หน้าที่ของ host คือโหลดโค้ดที่มัน **ไม่ได้** build เอง จาก URL ตอน runtime Module Federation ทำให้สิ่งนั้นเป็นความสามารถระดับ first-class แทน script loader ที่เขียนเอง map `remotes` บอก host ว่า entry file ของแต่ละ remote *อยู่ที่ไหน*; list `shared` บอก runtime ว่า dependency ไหนต้องเป็น instance เดียวที่แชร์กัน แทนที่จะเป็นสำเนาต่อ remote
+หน้าที่ของ host คือโหลดโค้ดที่ตัวเอง **ไม่ได้** build จาก URL ตอน runtime Module Federation ทำให้สิ่งนั้นเป็นความสามารถระดับ first-class แทน script loader ที่เขียนเอง map `remotes` บอก host ว่า entry file ของแต่ละ remote *อยู่ที่ไหน*; list `shared` บอก runtime ว่า dependency ไหนต้องเป็น instance เดียวที่แชร์กัน แทนที่จะเป็นสำเนาต่อ remote
 
-`React.lazy` + `<Suspense>` คือวิธีมาตรฐานในการ consume federated React component `import('catalog/Catalog')` ดูเหมือน dynamic import ปกติ แต่ module specifier `catalog/Catalog` เป็น *virtual* — federation runtime resolve `catalog` ไปยัง `remoteEntry.js` ที่เรา config ไว้, fetch มันผ่าน network แล้ว return module `./Catalog` ที่ expose ไว้ สำหรับ React มันก็แค่ lazy component; การวิ่งไป-กลับผ่าน network มองไม่เห็น
+`React.lazy` + `<Suspense>` คือวิธีมาตรฐานในการ consume federated React component `import('catalog/Catalog')` ดูเหมือน dynamic import ปกติ แต่ module specifier `catalog/Catalog` เป็น *virtual* — federation runtime resolve `catalog` ไปยัง `remoteEntry.js` ที่เรา config ไว้, fetch ผ่าน network แล้ว return module `./Catalog` ที่ expose ไว้ สำหรับ React ก็แค่ lazy component ตัวหนึ่ง; การวิ่งไป-กลับผ่าน network มองไม่เห็น
 
-`server.origin` สำคัญกว่าที่ตาเห็น มันบอก Vite ว่า absolute origin ที่ shell ถูกเสิร์ฟจากคือที่ไหน เพื่อให้ URL ที่ federation runtime สร้างเป็น absolute และถูกต้องข้าม origin — ถ้าไม่มีมัน remote ที่โหลดจาก `localhost:5001` อาจสร้าง asset URL พังเพราะ relative ไปยัง host ผิดตัว
+`server.origin` สำคัญกว่าที่ตาเห็น เพราะเป็นตัวบอก Vite ว่า shell ถูกเสิร์ฟจาก origin ไหน เพื่อให้ URL ที่ federation runtime สร้างเป็น absolute และถูกต้องข้าม origin — ถ้าไม่ตั้งค่านี้ remote ที่โหลดจาก `localhost:5001` อาจสร้าง asset URL พังเพราะ relative ไปยัง host ผิดตัว
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **Runtime remote loading vs. build-time import**
 
-- **Pros:** ทีม catalog ส่ง catalog ตัวใหม่ แล้ว shell หยิบมันขึ้นมาตอนโหลดหน้าถัดไป — ไม่ต้อง rebuild shell ไม่ต้อง redeploy shell คุณสมบัติข้อเดียวนั้นคือเหตุผลทั้งหมดที่ architecture นี้มีอยู่
-- **Cons:** remote คือ network dependency: มันช้าได้, version ตามหลังได้ หรือโหลดไม่ขึ้นเลยก็ได้ host ต้องจัดการ latency (`<Suspense>`) และความล้มเหลว (error boundary ใน [Module 12](/mosaic/th/resilience/)) — ปัญหาที่ build-time import ไม่เคยมี
+- **Pros:** ทีม catalog ส่ง catalog ตัวใหม่ แล้ว shell หยิบขึ้นมาตอนโหลดหน้าถัดไป — ไม่ต้อง rebuild shell ไม่ต้อง redeploy shell คุณสมบัติข้อเดียวนั้นคือเหตุผลทั้งหมดที่ architecture นี้มีอยู่
+- **Cons:** remote คือ network dependency: ช้าได้, version ตามหลังได้ หรือโหลดไม่ขึ้นเลยก็ได้ host ต้องจัดการ latency (`<Suspense>`) และความล้มเหลว (error boundary ใน [Module 12](/mosaic/th/resilience/)) — ปัญหาที่ build-time import ไม่เคยมี
 
 **Sharing React as a singleton vs. each remote bundling its own**
 
 - **Pros:** React โหลดครั้งเดียว hook, context และ `React.lazy` ทำงานข้าม boundary ระหว่าง host/remote เพราะมี React instance เดียว ไม่ใช่สองตัวแย่ง DOM เดียวกัน
 - **Cons:** host กับ remote ต้องตกลง React version ที่เข้ากันได้; mismatch แบบชน ๆ จะโผล่ตอน runtime กลไก shared-singleton คือหัวข้อทั้งหมดของ [Shared singletons](/mosaic/th/federation/shared-singletons/)
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `apps/shell/vite.config.ts`
 
@@ -77,11 +77,11 @@ export default defineConfig({
 });
 ```
 
-ทุก field ล้วน load-bearing: `type: 'module'` เพราะ Vite remote เป็น ES module; `shareScope: 'default'` เพื่อให้ host และ remote negotiate shared dep ใน scope เดียวกัน; `shared: ['react', 'react-dom']` เพื่อให้ React เป็น singleton ค่าเป๊ะ ๆ พวกนี้กลับมาซ้ำในทุก module — ให้มองว่ามันคือ contract
+ทุก field ล้วน load-bearing: `type: 'module'` เพราะ Vite remote เป็น ES module; `shareScope: 'default'` เพื่อให้ host และ remote negotiate shared dep ใน scope เดียวกัน; `shared: ['react', 'react-dom']` เพื่อให้ React เป็น singleton ค่าเป๊ะ ๆ พวกนี้กลับมาซ้ำในทุก module — ให้มองว่าเป็น contract
 
 ### 2. `apps/shell/src/remotes.d.ts`
 
-virtual module `catalog/*` และ `cart/*` ไม่มีอยู่บน disk TypeScript จึง resolve มันไม่ได้ ประกาศมันไว้เพื่อให้ `import('catalog/Catalog')` type-check ผ่าน
+virtual module `catalog/*` และ `cart/*` ไม่มีอยู่บน disk TypeScript จึง resolve ไม่ได้ ต้องประกาศไว้เพื่อให้ `import('catalog/Catalog')` type-check ผ่าน
 
 ```ts
 declare module 'catalog/Catalog' {
@@ -129,7 +129,7 @@ export function App() {
 }
 ```
 
-## Verify
+## ตรวจสอบผล
 
 catalog remote ยังไม่มีอยู่ เราจึง verify ว่า *ฝั่ง host* ต่อสายถูกต้อง — config error โผล่ตอน build ไม่ว่า remote จะขึ้นอยู่หรือไม่
 
@@ -155,19 +155,19 @@ ls apps/shell/dist/ | grep remoteEntry
 
 คาดหวัง: `remoteEntry.js` มีอยู่ ไฟล์นั้นมีอยู่พิสูจน์ว่า plugin รันแล้วและ host พร้อม federate
 
-พอคุณรัน `pnpm --filter shell dev` ตอนนี้ shell โหลดขึ้นและ *พยายาม* fetch `http://localhost:5001/remoteEntry.js` จนกว่า catalog remote จะรัน request นั้นจะ fail ใน console — คาดไว้แล้ว และเป็น failure mode ที่ [Module 12](/mosaic/th/resilience/) สอนให้คุณจัดการเป๊ะ ๆ host ถูกต้อง; มันแค่รอ remote อยู่
+พอคุณรัน `pnpm --filter shell dev` ตอนนี้ shell โหลดขึ้นและ *พยายาม* fetch `http://localhost:5001/remoteEntry.js` จนกว่า catalog remote จะรัน request นั้นจะ fail ใน console — คาดไว้แล้ว และเป็น failure mode ที่ [Module 12](/mosaic/th/resilience/) สอนให้คุณจัดการเป๊ะ ๆ host ถูกต้อง; แค่รอ remote อยู่
 
 **Check your understanding:**
 
 1. `import('catalog/Catalog')` ดูเหมือน dynamic import ปกติ จริง ๆ แล้วตอน runtime มีอะไรเกิดขึ้นที่ import ปกติไม่ทำ?
 2. ทำไม `build.target: 'esnext'` ถึงจำเป็นสำหรับ Module Federation host ใน Vite?
 3. `server.origin` ป้องกันอะไรไม่ให้พังเมื่อ remote โหลดจาก port ต่างกัน?
-4. เมื่อ config เสร็จแต่ยังไม่มี catalog remote รัน shell log fetch ที่ fail สำหรับ `remoteEntry.js` ทำไมนั่นถึงเป็น state ที่ *คาดหวัง* ตอนจบบทนี้ และ module ไหนจัดการมันอย่างเหมาะสม?
+4. เมื่อ config เสร็จแต่ยังไม่มี catalog remote รัน shell log fetch ที่ fail สำหรับ `remoteEntry.js` ทำไมนั่นถึงเป็น state ที่ *คาดหวัง* ตอนจบบทนี้ และ module ไหนจัดการเรื่องนี้อย่างเหมาะสม?
 
-## Recap
+## สรุป
 
 ตอนนี้ shell เป็น host แล้ว: `federation` plugin ถูก config ด้วย remote `catalog` และ `cart`, React ถูกแชร์เป็น singleton, `server.origin` และ `esnext` ถูกตั้ง และ `App.tsx` โหลด catalog ผ่าน `React.lazy` + `<Suspense>` host ปล่อย `remoteEntry.js` ของตัวเองและพร้อมให้ remote จริงมาทำ contract ให้ครบ
 
-คุณ config federation จากฝั่ง host แล้ว ต่อไปสร้าง *อีกฝั่ง* — remote จิ๋ว ๆ ที่ expose module แล้วดู host consume มันตั้งแต่ต้นจนจบ
+คุณ config federation จากฝั่ง host แล้ว ต่อไปสร้าง *อีกฝั่ง* — remote จิ๋ว ๆ ที่ expose module แล้วดู host consume ตั้งแต่ต้นจนจบ
 
 Next → [Module Federation Core →](/mosaic/th/federation/)

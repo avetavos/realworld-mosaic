@@ -5,9 +5,9 @@ sidebar:
   order: 1
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
-โครงกระดูกที่ module อื่นทุกตัวจะมาเติมเนื้อ: repository แบบ **pnpm-workspaces** ตัวเดียวที่เก็บ shell, remote ทุกตัว และ BFF ของมันไว้ข้างกัน พร้อม TypeScript config ที่ใช้ร่วมกัน และ dependency `@module-federation/vite` ที่ทุกตัว build อยู่บนมัน
+โครงกระดูกที่ module อื่นทุกตัวจะมาเติมเนื้อ: repository แบบ **pnpm-workspaces** ตัวเดียวที่เก็บ shell, remote ทุกตัว และ BFF ของแต่ละตัวไว้ข้างกัน พร้อม TypeScript config ที่ใช้ร่วมกัน และ dependency `@module-federation/vite` ที่ทุกตัวใช้เป็นฐานในการ build
 
 พอจบบทคุณจะได้แบบนี้บน disk:
 
@@ -29,13 +29,13 @@ mosaic/
 
 บทนี้เราสร้างแค่ scaffolding ของ workspace เท่านั้น shell app สร้างใน [The Shell (Host)](/mosaic/th/shell/); ส่วน remote และ packages มาทีหลัง สิ่งที่สำคัญตอนนี้คือ *รูปทรง*: หนึ่ง repo หลาย slice ที่ build แยกกันได้อิสระ
 
-## Why
+## ทำไม
 
-Micro-frontend คือเรื่องของ **independent deployment** สัญชาตญาณแรกจึงมักเป็นหนึ่ง git repo ต่อทีม แต่ Mosaic เลือกใช้ **monorepo ตัวเดียว** แทนอย่างตั้งใจ และสองแนวคิดนี้ไม่ขัดกันเลย — boundary ที่ทำให้ deploy อิสระได้คือ Module Federation ที่โหลด remote ผ่าน network ตอน runtime *ไม่ใช่* boundary ของ repo การเก็บทุกอย่างไว้ใน workspace เดียวให้เราได้ shared types, lockfile เดียว, `pnpm install` ครั้งเดียว และรันทั้งระบบด้วยคำสั่งเดียวตอนกำลังเรียน — โดยไม่เสีย runtime independence ที่ทำให้มันเป็น micro-frontend
+Micro-frontend คือเรื่องของ **independent deployment** สัญชาตญาณแรกจึงมักเป็นหนึ่ง git repo ต่อทีม แต่ Mosaic เลือกใช้ **monorepo ตัวเดียว** แทนอย่างตั้งใจ และสองแนวคิดนี้ไม่ขัดกันเลย — boundary ที่ทำให้ deploy อิสระได้คือ Module Federation ที่โหลด remote ผ่าน network ตอน runtime *ไม่ใช่* boundary ของ repo การเก็บทุกอย่างไว้ใน workspace เดียวให้เราได้ shared types, lockfile เดียว, `pnpm install` ครั้งเดียว และรันทั้งระบบด้วยคำสั่งเดียวตอนกำลังเรียน — โดยไม่เสีย runtime independence ที่ทำให้ระบบนี้เป็น micro-frontend
 
-pnpm เป็น package manager ที่เหมาะกับงานนี้เพราะ workspace support ของมันเป็น first-class: `pnpm --filter` เจาะไปที่ app หรือ BFF ตัวเดียวได้ตรง ๆ, protocol `workspace:*` link local package โดยไม่ต้อง publish และ content-addressable store ของมันทำให้ React ที่ install ใน 5 app อยู่บน disk แค่ชุดเดียว
+pnpm เป็น package manager ที่เหมาะกับงานนี้เพราะ workspace support เป็น first-class: `pnpm --filter` เจาะไปที่ app หรือ BFF ตัวเดียวได้ตรง ๆ, protocol `workspace:*` link local package โดยไม่ต้อง publish และ content-addressable store ทำให้ React ที่ install ใน 5 app อยู่บน disk แค่ชุดเดียว
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **Monorepo vs. many repos (polyrepo)**
 
@@ -44,10 +44,10 @@ pnpm เป็น package manager ที่เหมาะกับงานน�
 
 **pnpm workspaces vs. npm/yarn workspaces**
 
-- **Pros:** install เร็วกว่า, store ประหยัด disk, dependency resolution เข้มงวด (package import ได้เฉพาะสิ่งที่มันประกาศไว้) และ `--filter` สำหรับสั่งคำสั่งเจาะจงต่อ package
+- **Pros:** install เร็วกว่า, store ประหยัด disk, dependency resolution เข้มงวด (package import ได้เฉพาะสิ่งที่ประกาศไว้) และ `--filter` สำหรับสั่งคำสั่งเจาะจงต่อ package
 - **Cons:** ความเข้มงวดนั้นเปิดเผย bug จาก dependency ที่หายไป ซึ่ง flat `node_modules` ของ npm จะกลบไว้เงียบ ๆ — ถูกต้อง แต่บางทีก็สร้างความประหลาดใจตอน migrate project เดิม
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `pnpm-workspace.yaml`
 
@@ -81,11 +81,11 @@ root package เป็น private, เก็บ dev tooling ที่ทุก a
 }
 ```
 
-`pnpm --parallel --filter "./apps/*" dev` เริ่ม dev server ของทุก app พร้อมกันเมื่อมันมีอยู่แล้ว; `--filter` แคบคำสั่งใด ๆ ให้เหลือ slice เดียว เช่น `pnpm --filter catalog dev`
+`pnpm --parallel --filter "./apps/*" dev` เริ่ม dev server ของทุก app พร้อมกันเมื่อมีครบแล้ว; `--filter` แคบคำสั่งใด ๆ ให้เหลือ slice เดียว เช่น `pnpm --filter catalog dev`
 
 ### 3. `tsconfig.base.json`
 
-base config เดียวที่ทุก app extend เพื่อให้ shell และ remote ใช้ strictness และ module resolution ชุดเดียวกัน `"moduleResolution": "bundler"` คือ setting ที่ถูกต้องสำหรับ Vite — มัน resolve import แบบเดียวกับที่ bundler ทำ
+base config เดียวที่ทุก app extend เพื่อให้ shell และ remote ใช้ strictness และ module resolution ชุดเดียวกัน `"moduleResolution": "bundler"` คือ setting ที่ถูกต้องสำหรับ Vite — เพราะ resolve import แบบเดียวกับที่ bundler ทำ
 
 ```json
 {
@@ -116,14 +116,14 @@ base config เดียวที่ทุก app extend เพื่อให�
 
 ### 4. Create the directories
 
-app แต่ละตัว scaffold ใน module ของมันเอง แต่สร้าง folder ไว้ตอนนี้เพื่อให้ workspace glob resolve ได้:
+app แต่ละตัว scaffold ใน module ของตัวเอง แต่สร้าง folder ไว้ตอนนี้เพื่อให้ workspace glob resolve ได้:
 
 ```bash
 mkdir -p apps/shell apps/catalog apps/cart apps/content
 mkdir -p packages/design-system packages/bus packages/session
 ```
 
-## Verify
+## ตรวจสอบผล
 
 install จาก root ของ repo — pnpm อ่าน `pnpm-workspace.yaml`, เห็น app (ที่ยังว่างอยู่) แล้วเขียน lockfile เดียว:
 
@@ -150,7 +150,7 @@ pnpm --version   # 9.x or newer
 pnpm list --depth -1 @module-federation/vite
 ```
 
-คาดหวัง: มัน print package โดย range `^1.7.0` ถูก resolve เป็น version จริง ถ้าใช่ แปลว่ารากฐานมั่นคง
+คาดหวัง: จะ print package โดย range `^1.7.0` ถูก resolve เป็น version จริง ถ้าใช่ แปลว่ารากฐานมั่นคง
 
 **Check your understanding:**
 
@@ -159,10 +159,10 @@ pnpm list --depth -1 @module-federation/vite
 3. ทำไม `@module-federation/vite` ถึงอยู่ใน `package.json` ที่ *root* แทนที่จะ install แยกในแต่ละ app?
 4. `"moduleResolution": "bundler"` ใน base tsconfig แก้ปัญหาอะไรให้ project แบบ Vite?
 
-## Recap
+## สรุป
 
 ตอนนี้คุณมี pnpm-workspaces monorepo แล้ว: `apps/*` สำหรับ shell และ remote, `packages/*` สำหรับ shared library, base TypeScript config เดียวที่ทุกตัว extend และ Module Federation plugin ที่ pin ครั้งเดียวที่ root ยังไม่มีอะไร federate — แต่ทุก app ที่คุณ build จากนี้เสียบเข้ากับรูปทรงนี้
 
-remote แต่ละตัวคือ *vertical slice*: UI ของมัน **และ** backend ของมันเอง ก่อน build UI ตัวใด มาวางรูปแบบ backend เล็ก ๆ ที่ทุก remote ใช้ซ้ำกันก่อน
+remote แต่ละตัวคือ *vertical slice*: ทั้ง UI **และ** backend ของตัวเอง ก่อน build UI ตัวใด มาวางรูปแบบ backend เล็ก ๆ ที่ทุก remote ใช้ซ้ำกันก่อน
 
 Next → [The BFF stack →](/mosaic/th/setup/the-bff-stack/)

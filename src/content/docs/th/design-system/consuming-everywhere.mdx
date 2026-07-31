@@ -5,21 +5,21 @@ sidebar:
   order: 2
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
 primitive สามตัวเดิม — `<m-button>`, `<m-card>`, `<m-badge>` จาก [Tokens and Primitives →](/mosaic/th/design-system/tokens-and-primitives/) — render จาก **React** (catalog และ shell), **Svelte** (cart), และ **Astro** (content site) package เดียว import สามแบบ ให้ UI ที่เหมือนกันระดับ pixel ข้าม runtime สามตัว
 
-นี่คือผลตอบแทนของการเลือก custom element เป็น shared-UI layer ของ Mosaic ที่แนะนำครั้งแรกใน [Web Components Interop →](/mosaic/th/web-components/) ตรงนี้เราพิสูจน์มันครบตั้งแต่ต้นจนจบ
+นี่คือผลตอบแทนของการเลือก custom element เป็น shared-UI layer ของ Mosaic ที่แนะนำครั้งแรกใน [Web Components Interop →](/mosaic/th/web-components/) ตรงนี้เราพิสูจน์ให้เห็นครบตั้งแต่ต้นจนจบ
 
-## Why
+## ทำไม
 
-ทุก framework ใน Mosaic ท้ายที่สุด render **DOM** custom element *คือ* DOM — tag จริงที่ browser เข้าใจ — framework ไหนก็ผลิตมันได้ด้วย templating syntax ของตัวเองโดยไม่ต้องมี adapter นั่นคือประเด็นทั้งหมด: shared layer อยู่ *ใต้* framework ที่ระดับ platform ซึ่งทั้งสามตัวเห็นตรงกันอยู่แล้ว
+ทุก framework ใน Mosaic ท้ายที่สุด render **DOM** custom element *คือ* DOM — tag จริงที่ browser เข้าใจ — framework ไหนก็ผลิตได้ด้วย templating syntax ของตัวเองโดยไม่ต้องมี adapter นั่นคือประเด็นทั้งหมด: shared layer อยู่ *ใต้* framework ที่ระดับ platform ที่ทั้งสามตัวเห็นตรงกันอยู่แล้ว
 
 ทางเลือกอื่น — React component library — จะบังคับให้ทีม Svelte และ Astro reimplement หรือ wrap ทุก component และ copy พวกนั้นจะ drift ด้วย custom element ไม่มีอะไรต้อง port งานของ framework หดเหลือ "emit tag แล้วส่ง attribute"; shadow DOM ของ primitive ทำที่เหลือ
 
 ข้อควรระวังหนึ่งที่ต้องพูดตั้งแต่แรก: การส่ง **rich data** (object, array) ให้ custom element ต่างกันไปตาม framework attribute เป็น string React 19 และ Svelte 5 ต่างก็ set JS **property** บน custom element เมื่อค่าไม่ใช่ string ซึ่งจัดการ object ได้สะอาด; React รุ่นเก่าต้องใช้ `ref` เพื่อ set property เอง สำหรับ primitive ของ Mosaic เราคง public API ให้เป็นมิตรกับ attribute (string, boolean, slot) ซึ่งเลี่ยงปัญหานั้นไปเลย
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **Custom elements as the shared layer vs. a per-framework component library**
 
@@ -31,7 +31,7 @@ primitive สามตัวเดิม — `<m-button>`, `<m-card>`, `<m-badge
 - **Pros:** `tokens.css` import ครั้งเดียวต่อแอปแปลว่าทั้งสาม surface อ่าน `#8b5cf6` จาก source เดียวกัน; rebrand ในไฟล์เดียว
 - **Cons:** แต่ละแอปต้องจำให้ import sheet; ลืมแล้ว surface นั้นจะ fall back ไปที่ default ที่ hard-code ของ primitive เงียบ ๆ แทนที่จะ fail แบบดัง ๆ
 
-## Set it up
+## ติดตั้ง
 
 ทุกแอป install package และ import `tokens.css` ครั้งเดียวที่ entry แล้ว register primitive
 
@@ -79,7 +79,7 @@ Svelte render custom element ได้แบบ native — ไม่มีพิ
 
 ### 3. `apps/content/src/pages/index.astro` (Astro)
 
-Astro ship client JS เป็นศูนย์โดย default เราจึง register primitive ใน module `<script>` tag render เป็น HTML ธรรมดาบน server; นิยาม custom-element upgrade มันบน client นี่คือ WC bundle เดียวกับที่ Astro expose สำหรับ path การ compose (ดู [Composing SSR →](/mosaic/th/content/composing-ssr/))
+Astro ship client JS เป็นศูนย์โดย default เราจึง register primitive ใน module `<script>` tag render เป็น HTML ธรรมดาบน server แล้วนิยาม custom-element ค่อย upgrade ให้บน client นี่คือ WC bundle เดียวกับที่ Astro expose สำหรับ path การ compose (ดู [Composing SSR →](/mosaic/th/content/composing-ssr/))
 
 ```astro
 ---
@@ -99,9 +99,9 @@ import "@mosaic/design-system/tokens.css";
 
 ### 4. Why this is the right shared layer for multi-framework MFE
 
-ถอยออกมาแล้ว pattern ชัดเจน: primitive ถูกนิยาม **ครั้งเดียว** ใน package ที่เป็นกลางต่อ framework และ MFE แต่ละตัวแค่ *เรียกชื่อ* มัน ไม่มี React tree ร่วม, ไม่มีการเดินสาย prop ข้าม framework, ไม่มี build-time coupling ระหว่าง design system กับแอปไหน — ตรงกับการ decouple ที่ Mosaic ที่เหลือสร้างขึ้นพอดี design system deploy ตามจังหวะของตัวเอง และเพราะ tag ถูก resolve โดย `customElements` registry ของ browser ตอน runtime primitive version ใหม่จึงถึงทุก remote แบบเดียวกับที่ remote ใหม่ถึง shell: ตอนโหลดครั้งถัดไป
+ถอยออกมาแล้ว pattern ชัดเจน: primitive ถูกนิยาม **ครั้งเดียว** ใน package ที่เป็นกลางต่อ framework และ MFE แต่ละตัวแค่ *เรียกชื่อ* ออกมา ไม่มี React tree ร่วม, ไม่มีการเดินสาย prop ข้าม framework, ไม่มี build-time coupling ระหว่าง design system กับแอปไหน — ตรงกับการ decouple ที่ Mosaic ที่เหลือสร้างขึ้นพอดี design system deploy ตามจังหวะของตัวเอง และเพราะ `customElements` registry ของ browser resolve tag ตอน runtime primitive version ใหม่จึงถึงทุก remote แบบเดียวกับที่ remote ใหม่ถึง shell: ตอนโหลดครั้งถัดไป
 
-## Verify
+## ตรวจสอบผล
 
 รันสองแอปคู่กันแล้วเทียบ primitive ที่ share กัน
 
@@ -128,11 +128,11 @@ pnpm --filter catalog build && pnpm --filter cart build && pnpm --filter content
 
 1. ทำไม *ไม่มี* framework ไหนต้องมี adapter เพื่อ render `<m-button>` ในเมื่อแต่ละตัวต้องมี component ของตัวเองสำหรับทุกอย่างที่เหลือ?
 2. Astro register primitive ข้างใน `<script>` ขณะที่ React import ที่ entry module ทำไมถึงต่างกัน และแต่ละแบบทำอะไรสำเร็จ?
-3. การส่ง string attribute ให้ custom element ได้ผลเหมือนกันทุกที่; การส่ง object ไม่ ทำไม และการคง API ของ primitive ให้เป็นมิตรกับ attribute เลี่ยงมันยังไง?
-4. ถ้า package design-system ship style `<m-button>` ใหม่ มันไปถึง catalog, cart และ content app ได้ยังไง — และนั่นเหมือนกับวิธีที่ remote ใหม่ไปถึง shell อย่างไร?
+3. การส่ง string attribute ให้ custom element ได้ผลเหมือนกันทุกที่; การส่ง object ไม่ ทำไม และการคง API ของ primitive ให้เป็นมิตรกับ attribute เลี่ยงปัญหานี้ยังไง?
+4. ถ้า package design-system ship style `<m-button>` ใหม่ style นั้นไปถึง catalog, cart และ content app ได้ยังไง — และนั่นเหมือนกับวิธีที่ remote ใหม่ไปถึง shell อย่างไร?
 
-## Recap
+## สรุป
 
-เรา render primitive ของ `@mosaic/design-system` จาก React, Svelte และ Astro โดยไม่มี wrapper ต่อ framework — นิยามเดียว สาม runtime หน้าตาที่สอดคล้องกันเดียว custom element เป็น shared-UI layer ที่ถูกต้องสำหรับ multi-framework micro-frontend เพราะมันอยู่ใต้ framework ที่ระดับ browser ซึ่งทุกทีมเห็นตรงกันอยู่แล้ว
+เรา render primitive ของ `@mosaic/design-system` จาก React, Svelte และ Astro โดยไม่มี wrapper ต่อ framework — นิยามเดียว สาม runtime หน้าตาที่สอดคล้องกันเดียว custom element เป็น shared-UI layer ที่ถูกต้องสำหรับ multi-framework micro-frontend เพราะอยู่ใต้ framework ที่ระดับ browser ที่ทุกทีมเห็นตรงกันอยู่แล้ว
 
 นั่นครอบคลุม *หน้าตา* ที่ share กัน ต่อไปเราประสาน *navigation* ที่ share กัน: shell และ remote แบ่ง URL กันยังไงใน [Routing Across MFEs →](/mosaic/th/routing/)

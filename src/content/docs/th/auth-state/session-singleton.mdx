@@ -5,9 +5,9 @@ sidebar:
   order: 1
 ---
 
-## What we're building
+## สิ่งที่จะสร้าง
 
-package `@mosaic/session`: store เดียวที่ใช้ร่วมกันสำหรับ "ใคร sign in อยู่" มันเป็น mock (ชื่ออะไรก็ sign in ได้ state อยู่ใน `localStorage` ไม่มี auth จริง) พร้อม API เล็ก ๆ ที่ตั้งใจออกแบบ:
+package `@mosaic/session`: store เดียวที่ใช้ร่วมกันสำหรับ "ใคร sign in อยู่" เป็น mock (ชื่ออะไรก็ sign in ได้ state อยู่ใน `localStorage` ไม่มี auth จริง) พร้อม API เล็ก ๆ ที่ตั้งใจออกแบบ:
 
 ```ts
 import { getSession, signIn, signOut, subscribe } from '@mosaic/session';
@@ -19,36 +19,36 @@ const off = subscribe((session) => { /* react to changes */ });
 off();                 // stop listening
 ```
 
-ส่วนสำคัญไม่ใช่ตัวโค้ด — แต่คือการที่ package นี้เป็น **Module Federation singleton** micro-frontend ทุกตัว import instance *ตัวเดียวกัน* จึงมี session เดียวเป๊ะ ๆ บนหน้าเว็บ sign in ครั้งเดียวแล้วทั้งแอปเห็นตรงกัน มันยังประกาศทุกการเปลี่ยนแปลงบน [`@mosaic/bus`](/mosaic/th/communication/the-event-bus/) เป็น `auth:changed` เพื่อให้แม้แต่โค้ดที่ไม่ import session ก็ react ได้
+ส่วนสำคัญไม่ใช่ตัวโค้ด — แต่คือการที่ package นี้เป็น **Module Federation singleton** micro-frontend ทุกตัว import instance *ตัวเดียวกัน* จึงมี session เดียวเป๊ะ ๆ บนหน้าเว็บ sign in ครั้งเดียวแล้วทั้งแอปเห็นตรงกัน session ยังประกาศทุกการเปลี่ยนแปลงบน [`@mosaic/bus`](/mosaic/th/communication/the-event-bus/) เป็น `auth:changed` เพื่อให้แม้แต่โค้ดที่ไม่ import session ก็ react ได้
 
-## Why
+## ทำไม
 
-identity คือ state ชิ้นเดียวที่กินขอบเขตทุก remote จริง ๆ catalog อาจทักคุณด้วยชื่อ, cart ต้องรู้ว่า cart นี้ของใคร, shell แสดงปุ่ม sign-in/out ใน SPA เดี่ยวนี่คือ context provider ตัวเดียว แต่ข้าม remote ที่ deploy อิสระมันเป็นกับดัก: ถ้า remote แต่ละตัวเก็บ copy ของ "current user" ของตัวเอง พวกมันจะ drift — shell คิดว่าคุณคือ Ada แต่ cart ยังคิดว่าคุณเป็น guest
+identity คือ state ชิ้นเดียวที่กินขอบเขตทุก remote จริง ๆ catalog อาจทักคุณด้วยชื่อ, cart ต้องรู้ว่า cart นี้ของใคร, shell แสดงปุ่ม sign-in/out ใน SPA เดี่ยวนี่คือ context provider ตัวเดียว แต่ข้าม remote ที่ deploy อิสระนี่คือกับดัก: ถ้า remote แต่ละตัวเก็บ copy ของ "current user" ของตัวเอง ค่าจะ drift ออกจากกัน — shell คิดว่าคุณคือ Ada แต่ cart ยังคิดว่าคุณเป็น guest
 
 สอง property แก้เรื่องนั้น:
 
 - **One instance.** session เป็น store ระดับ module (`let current`) ถ้า remote แต่ละตัว bundle copy ของตัวเอง แต่ละตัวก็มี `current` ของตัวเอง และการ sign in ในตัวหนึ่งไม่แตะตัวอื่น การ mark `@mosaic/session` เป็น **singleton** ใน Module Federation บังคับให้ทั้งหน้าใช้ copy เดียวร่วมกัน — วินัยเดียวกับที่ bus ต้องการ ด้วยเหตุผลเดียวกัน
 - **Two ways to react.** โค้ดที่ import package `subscribe()` ได้และรับ object `Session` เต็ม ๆ ส่วนโค้ดที่ไม่อยากพึ่ง package เลย — custom element ธรรมดา, Astro content island — ฟัง `auth:changed` บน bus แทนได้ session emit ทั้งสองทาง
 
-เราตั้งใจให้มันเป็น mock auth จริง (token, refresh, httpOnly cookie) เป็นหัวข้อใหญ่ที่จะกลบบทเรียนตัวจริง ซึ่งคือ *การ share state ข้าม MFE* `localStorage` ให้ persistence ข้าม reload โดยไม่ต้องมี backend และการสลับไปใช้ provider จริงทีหลังก็ไม่เปลี่ยนรูปทรงของ shared singleton
+เราตั้งใจให้เป็น mock auth จริง (token, refresh, httpOnly cookie) เป็นหัวข้อใหญ่ที่จะกลบบทเรียนตัวจริง ซึ่งคือ *การ share state ข้าม MFE* `localStorage` ให้ persistence ข้าม reload โดยไม่ต้องมี backend และการสลับไปใช้ provider จริงทีหลังก็ไม่เปลี่ยนรูปทรงของ shared singleton
 
-## Pros & cons
+## ข้อดีข้อเสีย
 
 **A shared singleton session vs. each remote fetching `/me` itself**
 
 - **Pros:** source of truth เดียว — ไม่มี drift ระหว่าง remote ไม่มี fetch ซ้ำซ้อน มีที่เดียวให้ sign in และ out remote อ่าน current user แบบ synchronous ด้วย `getSession()` แทนที่จะ await request ของตัวเอง
-- **Cons:** ทุก remote ตอนนี้ share runtime dependency และต้องเห็นตรงกันเรื่อง version (singleton mismatch จะ warn หรือ break) session กลายเป็นจุด coordination — breaking change ต่อ API ของมันกระเพื่อมไปทุก consumer
+- **Cons:** ทุก remote ตอนนี้ share runtime dependency และต้องเห็นตรงกันเรื่อง version (singleton mismatch จะ warn หรือ break) session กลายเป็นจุด coordination — breaking change ต่อ API นี้กระเพื่อมไปทุก consumer
 
 **A `localStorage` mock vs. real cookie/token auth**
 
 - **Pros:** ไม่ต้องมี backend, persist ข้าม reload ทันที, เข้าใจง่ายมากตอนคุณกำลังเรียนเรื่อง composition API (`getSession/signIn/signOut/subscribe`) มีรูปทรงเดียวกับที่ store จริงจะ expose
-- **Cons:** มันไม่ secure และไม่จริง — `localStorage` อ่านได้โดย script ตัวไหนก็ได้ และไม่มี server verify อะไรเลย มันเป็นตัวแทนของ identity ไม่ใช่ authentication; production ต้องมี provider จริงหลัง interface เดียวกัน
+- **Cons:** ไม่ secure และไม่จริง — `localStorage` อ่านได้โดย script ตัวไหนก็ได้ และไม่มี server verify อะไรเลย นี่เป็นตัวแทนของ identity ไม่ใช่ authentication; production ต้องมี provider จริงหลัง interface เดียวกัน
 
-## Set it up
+## ติดตั้ง
 
 ### 1. `packages/session/package.json`
 
-พึ่ง bus เพราะมันประกาศ `auth:changed`
+พึ่ง bus เพราะต้องประกาศ `auth:changed`
 
 ```json
 {
@@ -125,7 +125,7 @@ export function subscribe(cb: (session: Session) => void): () => void {
 
 ### 3. Share it as a singleton (`vite.config.ts`)
 
-เพิ่ม `@mosaic/session` — คู่กับ bus ที่มันพึ่ง — เข้าไปใน `shared` ทั้งใน host **และ remote ทุกตัว** เป็น singleton:
+เพิ่ม `@mosaic/session` — คู่กับ bus ที่ต้องพึ่ง — เข้าไปใน `shared` ทั้งใน host **และ remote ทุกตัว** เป็น singleton:
 
 ```ts
 federation({
@@ -142,7 +142,7 @@ federation({
 
 Svelte cart list `'@mosaic/session': { singleton: true }` ด้วยเช่นกัน จึงอ่าน `current` ตัวเดียวกันกับที่ shell เขียน
 
-## Verify
+## ตรวจสอบผล
 
 type-check package:
 
@@ -152,7 +152,7 @@ pnpm --filter @mosaic/session exec tsc --noEmit
 
 คาดหวัง: **ไม่มี output**
 
-จากนั้นลองใช้มันใน browser เริ่ม shell (`pnpm --filter shell dev`) เปิด console:
+จากนั้นลองใช้ใน browser เริ่ม shell (`pnpm --filter shell dev`) เปิด console:
 
 ```js
 const s = await import('@mosaic/session');
@@ -164,7 +164,7 @@ s.signIn('Ada');
 s.getSession();     // { userId: 'u_ada', name: 'Ada' }
 ```
 
-ตอนนี้ **reload หน้า** แล้วรัน `(await import('@mosaic/session')).getSession()` — มันยัง return Ada พิสูจน์ persistence ของ `localStorage` จากนั้น:
+ตอนนี้ **reload หน้า** แล้วรัน `(await import('@mosaic/session')).getSession()` — ยัง return Ada พิสูจน์ persistence ของ `localStorage` จากนั้น:
 
 ```js
 s.signOut();
@@ -186,9 +186,9 @@ pnpm -r build
 
 1. ทำไม `@mosaic/session` ต้องเป็น singleton? อธิบาย drift ที่เกิดขึ้นเป๊ะ ๆ ถ้า remote สองตัวต่าง bundle copy ของตัวเอง
 2. `set()` แจ้ง subscriber *และ* emit `auth:changed` บน bus แต่ละเส้นทางไว้เพื่อใคร และทำไมเก็บไว้ทั้งคู่?
-3. ทำไม `localStorage` เป็น mock ที่รับได้ในที่นี้แต่ไม่ใช่ authentication จริง? อะไรที่ยังคงเดิมเมื่อคุณแทนมันด้วย provider จริง?
-4. `getSession()` return แบบ synchronous ในขณะที่ fetch `/me` จริงจะเป็น async singleton ให้อะไรกับคุณที่ทำให้การอ่านแบบ synchronous ถูกต้อง?
+3. ทำไม `localStorage` เป็น mock ที่รับได้ในที่นี้แต่ไม่ใช่ authentication จริง? อะไรที่ยังคงเดิมเมื่อคุณเปลี่ยนไปใช้ provider จริง?
+4. `getSession()` return แบบ synchronous ส่วน fetch `/me` จริงจะเป็น async singleton ให้อะไรกับคุณที่ทำให้การอ่านแบบ synchronous ถูกต้อง?
 
-## Recap
+## สรุป
 
 คุณสร้าง `@mosaic/session`: mock store ที่ backed ด้วย `localStorage` พร้อม `getSession/signIn/signOut/subscribe` share เป็น Module Federation singleton เพื่อให้ทั้งหน้ามี identity เดียว และประกาศทุกการเปลี่ยนแปลงบน bus เป็น `auth:changed` ต่อไปเอาไปใช้ข้าม framework: [Sharing Across MFEs →](/mosaic/th/auth-state/sharing-across-mfes/) ให้ remote อ่าน session และ react ต่อการ sign in จาก shell
