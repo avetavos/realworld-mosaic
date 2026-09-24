@@ -11,9 +11,9 @@ sidebar:
 
 พอจบบทคุณจะได้แบบนี้บน disk:
 
-```
+```text
 mosaic/
-├── pnpm-workspace.yaml         # packages: apps/*, packages/*
+├── pnpm-workspace.yaml         # packages: apps/*, apps/*/bff, packages/*
 ├── package.json                # root: dev deps + workspace scripts
 ├── tsconfig.base.json          # one TS config every app extends
 ├── apps/
@@ -56,6 +56,7 @@ pnpm เป็น package manager ที่เหมาะกับงานน�
 ```yaml
 packages:
   - 'apps/*'
+  - 'apps/*/bff'
   - 'packages/*'
 ```
 
@@ -85,7 +86,7 @@ root package เป็น private, เก็บ dev tooling ที่ทุก a
 
 ### 3. `tsconfig.base.json`
 
-base config เดียวที่ทุก app extend เพื่อให้ shell และ remote ใช้ strictness และ module resolution ชุดเดียวกัน `"moduleResolution": "bundler"` คือ setting ที่ถูกต้องสำหรับ Vite — เพราะ resolve import แบบเดียวกับที่ bundler ทำ
+base config เดียวที่ทุก app extend เพื่อให้ shell และ remote ใช้ strictness และ module resolution ชุดเดียวกัน `"moduleResolution": "bundler"` คือ setting ที่ถูกต้องสำหรับ Vite — เพราะ resolve import แบบเดียวกับที่ bundler ทำ — และ `"jsx": "react-jsx"` ทำให้ React app ใช้ JSX ได้โดยไม่ต้อง import `React` เข้ามาในสโคปเอง
 
 ```json
 {
@@ -93,6 +94,7 @@ base config เดียวที่ทุก app extend เพื่อให�
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "strict": true,
     "skipLibCheck": true,
@@ -133,7 +135,7 @@ pnpm install
 
 output ที่คาดหวังจะจบด้วยประมาณนี้:
 
-```
+```text
 Done in 2.1s
 ```
 

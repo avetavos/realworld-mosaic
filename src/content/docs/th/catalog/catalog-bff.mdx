@@ -33,7 +33,7 @@ Hono เป็นเครื่องมือที่ถูกต้องเ
 
 ## ติดตั้ง
 
-### 1. `apps/catalog/bff/products.ts`
+### 1. `apps/catalog/bff/src/products.ts`
 
 in-memory data — source เดียวที่ BFF serve
 
@@ -53,19 +53,24 @@ export const products: Product[] = [
 ];
 ```
 
-### 2. `apps/catalog/bff/server.ts`
+### 2. `apps/catalog/bff/src/app.ts`
 
-Hono app: สอง route, CORS สำหรับ path `/api/*` (เพื่อให้ origin ของ shell เรียกได้) serve บน 4001 ด้วย `@hono/node-server`
+ต่อยอด `app.ts` ที่มีแค่ health check จาก [The BFF stack](/mosaic/th/setup/the-bff-stack/) ด้วยสอง route ของ product `server.ts` ไม่ต้องแก้ — มัน import `app` นี้แล้ว serve บน 4001 อยู่แล้ว
 
 ```ts
-import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { products } from './products';
 
-const app = new Hono();
+export const app = new Hono();
 
+// The remote's dev server runs on a different origin, so allow it.
 app.use('/api/*', cors());
+
+// The health check every BFF exposes — unchanged from the setup lesson.
+app.get('/api/health', (c) =>
+  c.json({ status: 'ok', service: 'catalog-bff' }),
+);
 
 app.get('/api/products', (c) => c.json(products));
 
@@ -75,9 +80,7 @@ app.get('/api/products/:id', (c) => {
   return c.json(product);
 });
 
-serve({ fetch: app.fetch, port: 4001 }, (info) => {
-  console.log(`catalog BFF on http://localhost:${info.port}`);
-});
+export default app;
 ```
 
 ### 3. `apps/catalog/src/Catalog.tsx`
@@ -133,7 +136,7 @@ export default function Catalog() {
 เริ่ม BFF แล้วยิงทั้งสอง route ตรง ๆ:
 
 ```bash
-pnpm --filter catalog dev:bff
+pnpm --filter @mosaic/catalog-bff dev
 # catalog BFF on http://localhost:4001
 ```
 
@@ -152,7 +155,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4001/api/products/nope
 
 ```bash
 pnpm --filter catalog dev        # remote on 5001
-pnpm --filter catalog dev:bff    # BFF on 4001
+pnpm --filter @mosaic/catalog-bff dev    # BFF on 4001
 pnpm --filter shell dev          # shell on 5000 — open the catalog page
 # The four cards now come from the BFF. Stop the BFF and reload:
 # the remote shows "Couldn’t load products" instead of crashing the shell.

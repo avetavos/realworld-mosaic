@@ -43,7 +43,7 @@ So the split is deliberate. Tokens are open (global, themeable, overridable per 
 
 ### 1. `packages/design-system/package.json`
 
-A plain ESM package, no build step required for dev — Vite consumes the `.ts` source directly through the workspace.
+A plain ESM package, no build step required for dev — Vite consumes the `.ts` source directly through the workspace. Extend the `packages/design-system/package.json` from [A Shared Primitive](/mosaic/en/web-components/a-shared-primitive/) with the main index and the token sheet, keeping the `./m-price` export it already has:
 
 ```json
 {
@@ -52,8 +52,18 @@ A plain ESM package, no build step required for dev — Vite consumes the `.ts` 
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./m-price": "./src/m-price.ts"
   }
+}
+```
+
+It also needs the same `tsconfig.json` every workspace package extends:
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"]
 }
 ```
 

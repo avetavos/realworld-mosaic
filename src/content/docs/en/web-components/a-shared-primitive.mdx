@@ -33,7 +33,22 @@ The formatting-in-one-place point matters beyond looks: money is exactly the kin
 
 ## Set it up
 
-### 1. `packages/design-system/src/m-price.ts`
+### 1. `packages/design-system/package.json`
+
+The design-system package's first file — just enough for `@mosaic/design-system/m-price` to resolve as a workspace package. [Tokens and Primitives](/mosaic/en/design-system/tokens-and-primitives/) later extends this same file with the `.` main export and `./tokens.css`.
+
+```json
+{
+  "name": "@mosaic/design-system",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./m-price": "./src/m-price.ts"
+  }
+}
+```
+
+### 2. `packages/design-system/src/m-price.ts`
 
 An autonomous custom element. It observes the `cents` attribute, re-renders on change, and keeps its markup and CSS inside a shadow root so nothing outside can restyle it.
 
@@ -78,7 +93,7 @@ if (!customElements.get('m-price')) {
 }
 ```
 
-### 2. Consume it from React (the catalog)
+### 3. Consume it from React (the catalog)
 
 Import the design system once so the element is registered, then write the tag. Swap the hand-rolled `toFixed` formatting from the catalog for the shared primitive.
 
@@ -89,9 +104,11 @@ import '@mosaic/design-system/m-price';
 <m-price cents={String(product.priceCents)} />
 ```
 
-Teach JSX about the tag (once, in the shell or catalog `remotes.d.ts`):
+Teach JSX about the tag once, in the catalog's own `custom-elements.d.ts` (the same pattern — and the same `export {}` requirement — as [the catalog-app declaration](/mosaic/en/web-components/custom-element-boundary/)):
 
 ```ts
+export {};
+
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
@@ -101,7 +118,7 @@ declare module 'react' {
 }
 ```
 
-### 3. Consume it from Svelte and Astro
+### 4. Consume it from Svelte and Astro
 
 The same tag, no wrapper. Svelte and Astro render custom elements natively:
 
@@ -143,11 +160,11 @@ el.setAttribute('cents', '8900');
 // The rendered text updates to $89.00 — attributeChangedCallback re-rendered it.
 ```
 
-Then confirm the same tag renders in the catalog (React) and, later, the cart (Svelte) with identical output, and that the design-system package builds:
+Then confirm a real consumer picks it up. The design-system package has no build step of its own (Vite reads its `.ts` source directly) — the real proof is that the catalog, which now imports `@mosaic/design-system/m-price`, still builds:
 
 ```bash
-pnpm --filter @mosaic/design-system build
-# builds the primitive; catalog and cart import it and show the same price.
+pnpm --filter catalog build
+# builds; the catalog's product cards render through the shared primitive.
 ```
 
 Check your understanding:

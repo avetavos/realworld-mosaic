@@ -64,6 +64,15 @@ identity คือ state ชิ้นเดียวที่กินขอบ�
 }
 ```
 
+เหมือน `@mosaic/bus` ต้องมี `tsconfig.json` ของตัวเอง:
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"]
+}
+```
+
 ### 2. `packages/session/src/index.ts`
 
 store ระดับ module บวก subscriber ทุกการเปลี่ยนแปลง persist, แจ้ง local subscriber, **และ** emit บน bus

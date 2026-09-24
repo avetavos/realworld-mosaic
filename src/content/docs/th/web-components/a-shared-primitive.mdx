@@ -33,7 +33,22 @@ Web Component ship **ครั้งเดียว** แล้ว consume **ท
 
 ## ติดตั้ง
 
-### 1. `packages/design-system/src/m-price.ts`
+### 1. `packages/design-system/package.json`
+
+ไฟล์แรกของ design-system package — แค่พอให้ `@mosaic/design-system/m-price` resolve ได้ในฐานะ workspace package ทีหลัง [Tokens and Primitives](/mosaic/th/design-system/tokens-and-primitives/) จะต่อยอดไฟล์เดียวกันนี้ด้วย `.` main export กับ `./tokens.css`
+
+```json
+{
+  "name": "@mosaic/design-system",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./m-price": "./src/m-price.ts"
+  }
+}
+```
+
+### 2. `packages/design-system/src/m-price.ts`
 
 autonomous custom element ตัวนี้ observe attribute `cents`, re-render เมื่อค่าเปลี่ยน, และเก็บ markup กับ CSS ไว้ใน shadow root เพื่อไม่ให้อะไรข้างนอก restyle ได้
 
@@ -78,7 +93,7 @@ if (!customElements.get('m-price')) {
 }
 ```
 
-### 2. Consume it from React (the catalog)
+### 3. Consume it from React (the catalog)
 
 เรา import design system หนึ่งครั้งเพื่อให้ element ถูก register แล้วเขียน tag สลับการ format ด้วย `toFixed` ที่เขียนมือใน catalog เป็น shared primitive แทน
 
@@ -89,9 +104,11 @@ import '@mosaic/design-system/m-price';
 <m-price cents={String(product.priceCents)} />
 ```
 
-สอน JSX ให้รู้จัก tag (ครั้งเดียว ใน `remotes.d.ts` ของ shell หรือ catalog):
+สอน JSX ให้รู้จัก tag ครั้งเดียว ใน `custom-elements.d.ts` ของ catalog เอง (pattern เดียวกัน — และต้องมี `export {}` เหมือนกัน — กับ[การ declare catalog-app](/mosaic/th/web-components/custom-element-boundary/)):
 
 ```ts
+export {};
+
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
@@ -101,7 +118,7 @@ declare module 'react' {
 }
 ```
 
-### 3. Consume it from Svelte and Astro
+### 4. Consume it from Svelte and Astro
 
 tag เดียวกัน ไม่ต้องมี wrapper Svelte กับ Astro render custom element ได้ในตัว:
 
@@ -143,11 +160,11 @@ el.setAttribute('cents', '8900');
 // The rendered text updates to $89.00 — attributeChangedCallback re-rendered it.
 ```
 
-จากนั้นยืนยันว่า tag เดียวกัน render ใน catalog (React) และในภายหลัง cart (Svelte) โดยได้ output เหมือนกัน และ design-system package build ผ่าน:
+จากนั้นยืนยันว่า consumer จริงหยิบไปใช้ได้ design-system package ไม่มี build step ของตัวเอง (Vite อ่าน `.ts` source ตรง ๆ) — บทพิสูจน์จริงคือ catalog ที่ตอนนี้ import `@mosaic/design-system/m-price` ยัง build ผ่าน:
 
 ```bash
-pnpm --filter @mosaic/design-system build
-# builds the primitive; catalog and cart import it and show the same price.
+pnpm --filter catalog build
+# builds; the catalog's product cards render through the shared primitive.
 ```
 
 ตรวจสอบความเข้าใจ:

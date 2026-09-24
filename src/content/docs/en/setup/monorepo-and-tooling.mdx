@@ -11,9 +11,9 @@ The skeleton every other module fills in: a single **pnpm-workspaces** repositor
 
 By the end you'll have this on disk:
 
-```
+```text
 mosaic/
-├── pnpm-workspace.yaml         # packages: apps/*, packages/*
+├── pnpm-workspace.yaml         # packages: apps/*, apps/*/bff, packages/*
 ├── package.json                # root: dev deps + workspace scripts
 ├── tsconfig.base.json          # one TS config every app extends
 ├── apps/
@@ -56,6 +56,7 @@ This one file turns a folder into a workspace. Every app lives under `apps/`, ev
 ```yaml
 packages:
   - 'apps/*'
+  - 'apps/*/bff'
   - 'packages/*'
 ```
 
@@ -85,7 +86,7 @@ The root package is private, holds dev tooling shared by all apps, and defines c
 
 ### 3. `tsconfig.base.json`
 
-One base config every app extends, so the shell and remotes share the same strictness and module resolution. `"moduleResolution": "bundler"` is the correct setting for Vite — it resolves imports the way the bundler does.
+One base config every app extends, so the shell and remotes share the same strictness and module resolution. `"moduleResolution": "bundler"` is the correct setting for Vite — it resolves imports the way the bundler does — and `"jsx": "react-jsx"` lets the React apps use JSX without an explicit `React` import in scope.
 
 ```json
 {
@@ -93,6 +94,7 @@ One base config every app extends, so the shell and remotes share the same stric
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "strict": true,
     "skipLibCheck": true,
@@ -133,7 +135,7 @@ pnpm install
 
 Expected output ends with something like:
 
-```
+```text
 Done in 2.1s
 ```
 

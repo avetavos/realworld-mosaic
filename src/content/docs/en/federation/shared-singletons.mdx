@@ -44,17 +44,17 @@ federation({
   shared: {
     react: {
       singleton: true,
-      requiredVersion: '^18.3.0',
+      requiredVersion: '^19.0.0',
     },
     'react-dom': {
       singleton: true,
-      requiredVersion: '^18.3.0',
+      requiredVersion: '^19.0.0',
     },
   },
 })
 ```
 
-`singleton: true` says "there must be exactly one active instance of this across the whole shared scope." `requiredVersion` is what the runtime checks compatibility against when it negotiates. The array shorthand infers these from each app's `package.json`, which is why keeping React versions aligned across the workspace (Module 1's single root-pinned toolchain mindset) matters.
+`singleton: true` says "there must be exactly one active instance of this across the whole shared scope." `requiredVersion` is what the runtime checks compatibility against when it negotiates. The array shorthand only infers `requiredVersion` from each app's `package.json` — it leaves `singleton` at its default, `false`. In this tutorial that's harmless (every app resolves the same React version, so there's nothing to warn about), but it means the array form never actually *enforces* one-instance-only the way the object form does. [Lazy loading & dedupe](/mosaic/en/resilience/lazy-and-dedupe/) switches to the explicit object form for exactly that reason — keeping React versions aligned across the workspace (Module 1's single root-pinned toolchain mindset) is what makes the array shorthand safe to use until then.
 
 ### 2. Same shareScope everywhere
 
@@ -69,6 +69,7 @@ federation({
   name: 'cart',
   filename: 'remoteEntry.js',
   exposes: { './register': './src/register.ts' },
+  dts: false, // hand-declared in remotes.d.ts instead
   // no `shared: ['react', ...]` — it's a Svelte app behind a Web Component
 })
 ```
@@ -83,7 +84,7 @@ Open `http://localhost:5000/` with the catalog rendering, then in the browser co
 
 ```js
 // In DevTools console, with the app loaded:
-window.__mfShared = window.__mfShared; // federation runtime tracks shared modules
+console.log(window.__FEDERATION__.__SHARE__.shell.default.react); // real MF runtime global — one version key means one shared instance
 ```
 
 More concretely, look at the **Network** panel: with `shared` working, you see React's chunk fetched **once**, then reused when the catalog loads — not a second React chunk for the remote.

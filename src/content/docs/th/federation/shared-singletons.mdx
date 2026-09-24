@@ -44,17 +44,17 @@ federation({
   shared: {
     react: {
       singleton: true,
-      requiredVersion: '^18.3.0',
+      requiredVersion: '^19.0.0',
     },
     'react-dom': {
       singleton: true,
-      requiredVersion: '^18.3.0',
+      requiredVersion: '^19.0.0',
     },
   },
 })
 ```
 
-`singleton: true` พูดว่า "ต้องมี instance ที่ active ตัวเดียวเป๊ะของสิ่งนี้ทั่วทั้ง shared scope" `requiredVersion` คือสิ่งที่ runtime เช็ค compatibility ตอน negotiate array shorthand infer พวกนี้จาก `package.json` ของแต่ละ app จึงเป็นเหตุผลว่าทำไมการรักษา React version ให้ตรงกันทั้ง workspace (mindset toolchain ที่ pin ที่ root ตัวเดียวของ Module 1) ถึงสำคัญ
+`singleton: true` พูดว่า "ต้องมี instance ที่ active ตัวเดียวเป๊ะของสิ่งนี้ทั่วทั้ง shared scope" `requiredVersion` คือสิ่งที่ runtime เช็ค compatibility ตอน negotiate array shorthand infer แค่ `requiredVersion` จาก `package.json` ของแต่ละ app เท่านั้น — `singleton` ยังเป็นค่า default คือ `false` ในคอร์สนี้ไม่มีผลอะไร (ทุก app resolve React version เดียวกันอยู่แล้ว จึงไม่มีอะไรให้เตือน) แต่หมายความว่า array form ไม่เคย *บังคับ* one-instance-only จริง ๆ แบบที่ object form ทำ [Lazy loading & dedupe](/mosaic/th/resilience/lazy-and-dedupe/) เปลี่ยนไปใช้ object form ตรง ๆ ด้วยเหตุผลนี้เป๊ะ — การรักษา React version ให้ตรงกันทั้ง workspace (mindset toolchain ที่ pin ที่ root ตัวเดียวของ Module 1) คือสิ่งที่ทำให้ array shorthand ปลอดภัยพอจะใช้ได้จนถึงตอนนั้น
 
 ### 2. Same shareScope everywhere
 
@@ -69,6 +69,7 @@ federation({
   name: 'cart',
   filename: 'remoteEntry.js',
   exposes: { './register': './src/register.ts' },
+  dts: false, // hand-declared in remotes.d.ts instead
   // no `shared: ['react', ...]` — it's a Svelte app behind a Web Component
 })
 ```
@@ -83,7 +84,7 @@ cart ไม่เข้าร่วม singleton ของ React เพราะ
 
 ```js
 // In DevTools console, with the app loaded:
-window.__mfShared = window.__mfShared; // federation runtime tracks shared modules
+console.log(window.__FEDERATION__.__SHARE__.shell.default.react); // real MF runtime global — one version key means one shared instance
 ```
 
 ที่เป็นรูปธรรมกว่าคือ ดูที่ panel **Network**: เมื่อ `shared` ทำงาน คุณเห็น chunk ของ React ถูก fetch **ครั้งเดียว** แล้วถูกใช้ซ้ำตอน catalog โหลด — ไม่ใช่ React chunk ตัวที่สองสำหรับ remote

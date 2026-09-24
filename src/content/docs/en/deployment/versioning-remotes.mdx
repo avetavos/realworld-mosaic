@@ -46,6 +46,7 @@ federation({
     react:       { singleton: true, requiredVersion: '^19.0.0' },
     'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
   },
+  dts: false, // hand-declared in remotes.d.ts instead
   // Emit mf-manifest.json + mf-stats.json and stamp the build id into it.
   manifest: {
     additionalData: ({ stats }) => {
@@ -60,7 +61,7 @@ federation({
 
 On Cloudflare Pages, a `_headers` file sets the split cache policy: the entry is always revalidated, the hashed assets are immutable.
 
-```
+```text
 # The manifest the shell reads every load — never cache stale.
 /remoteEntry.js
   Cache-Control: no-cache

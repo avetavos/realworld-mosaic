@@ -7,7 +7,7 @@ sidebar:
 
 ## สิ่งที่จะสร้าง
 
-scheme routing สองระดับ **shell** เป็นเจ้าของ top-level route ด้วย **react-router** (v7 ในโหมด library) — `/`, `/catalog/*`, `/cart`, `/content` **remote** แต่ละตัวเป็นเจ้าของทุกอย่าง *ใต้* slot ของตัวเอง: catalog remote ตัดสินใจว่า `/catalog`, `/catalog/p/42` และ `/catalog/search` render อะไร โดย shell ไม่รู้ว่า path พวกนั้นมีอยู่
+scheme routing สองระดับ **shell** เป็นเจ้าของ top-level route ด้วย **react-router** (v8 ในโหมด Declarative) — `/`, `/catalog/*`, `/cart`, `/content` **remote** แต่ละตัวเป็นเจ้าของทุกอย่าง *ใต้* slot ของตัวเอง: catalog remote ตัดสินใจว่า `/catalog`, `/catalog/p/42` และ `/catalog/search` render อะไร โดย shell ไม่รู้ว่า path พวกนั้นมีอยู่
 
 กลไกคือ **splat route** ใน shell ที่ยื่นส่วนที่เหลือของ URL ให้ remote และ **descendant `<Routes>`** ข้างใน remote ที่ match แบบ relative กับ mount point นั้น browser history เดียว, router สองตัวที่เห็นตรงกันว่าเส้นแบ่งอยู่ตรงไหน
 

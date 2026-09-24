@@ -56,7 +56,7 @@ export function ProductCard({ product }: { product: Product }) {
   return (
     <article className="product-card">
       <h3>{product.name}</h3>
-      <m-price cents={product.priceCents}></m-price>
+      <m-price cents={String(product.priceCents)}></m-price>
       <button
         onClick={() =>
           bus.emit('cart:add', {
@@ -106,7 +106,7 @@ Svelte cart เป็นเจ้าของ cart state จึงฟัง `car
     <li>{line.name} × {line.qty}</li>
   {/each}
 </ul>
-<p>{count} items · <m-price cents={totalCents}></m-price></p>
+<p>{count} items · <m-price cents={String(totalCents)}></m-price></p>
 ```
 
 ### 3. `apps/shell/src/CartBadge.tsx`

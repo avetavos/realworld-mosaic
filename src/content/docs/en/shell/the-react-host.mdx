@@ -47,13 +47,13 @@ The shell is a React + Vite app. It runs on port 5000 and, for now, depends only
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "react": "^18.3.0",
-    "react-dom": "^18.3.0"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.0",
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0"
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
   }
 }
 ```
@@ -97,7 +97,7 @@ Vite's entry HTML mounts the React root.
 
 ### 4. `apps/shell/src/main.tsx`
 
-Standard React 18 client entry.
+Standard React 19 client entry.
 
 ```tsx
 import { StrictMode } from 'react';
@@ -170,7 +170,7 @@ pnpm --filter shell dev
 
 Expected output:
 
-```
+```text
   VITE ready
   ➜  Local:   http://localhost:5000/
 ```

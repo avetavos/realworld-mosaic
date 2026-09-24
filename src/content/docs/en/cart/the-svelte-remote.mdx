@@ -38,7 +38,35 @@ The cart still follows the same **vertical slice** rule as the catalog: its own 
 
 ## Set it up
 
-### 1. `apps/cart/bff/server.ts`
+### 1. `apps/cart/package.json`
+
+The cart app and its BFF share one package — same shape as the shell and catalog (dev/build/preview/typecheck on port 5002), plus `hono` and `@hono/node-server` for the BFF files under `bff/`, and `tsx` to run them directly with no build step.
+
+```json
+{
+  "name": "cart",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5002 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --port 5002 --strictPort",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "svelte": "^5.0.0",
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0",
+    "@mosaic/design-system": "workspace:*"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.2.0",
+    "tsx": "^4.19.0"
+  }
+}
+```
+
+### 2. `apps/cart/bff/server.ts`
 
 The BFF keeps an in-memory cart keyed by process (a single mock session for the course). It mirrors the exact endpoints from the build contract.
 
@@ -94,9 +122,9 @@ serve({ fetch: app.fetch, port: 4002 }, (info) => {
 });
 ```
 
-### 2. `apps/cart/vite.config.ts`
+### 3. `apps/cart/vite.config.ts`
 
-A plain Svelte + Vite app for now. Dev server on **5002**, with `/api` proxied to the BFF so the browser only ever talks to one origin in development. Federation config comes in the next lesson.
+A plain Svelte + Vite app for now. Dev server on **5002**. Federation config comes in the next lesson.
 
 ```ts
 import { defineConfig } from 'vite';
@@ -106,16 +134,13 @@ export default defineConfig({
   plugins: [svelte()],
   server: {
     port: 5002,
-    proxy: {
-      '/api': 'http://localhost:4002',
-    },
   },
 });
 ```
 
-### 3. `apps/cart/src/cart-store.svelte.ts`
+### 4. `apps/cart/src/cart-store.svelte.ts`
 
-Runes work in `.svelte.ts` modules too, so the cart state and its BFF calls live in one place — a small store the UI just reads. `$state` makes the object deeply reactive; any `.svelte` file that reads `store.items` re-renders when it changes.
+Runes work in `.svelte.ts` modules too, so the cart state and its BFF calls live in one place — a small store the UI just reads. `$state` makes the object deeply reactive; any `.svelte` file that reads `store.items` re-renders when it changes. Like the catalog's BFF calls, this fetches an **absolute** origin rather than a relative `/api` path — a dev-only proxy would work standalone but silently break the moment [the next lesson](/mosaic/en/cart/mount-via-web-component/) mounts this cart in the shell at a different origin.
 
 ```ts
 type CartItem = {
@@ -128,19 +153,21 @@ type CartItem = {
 
 type Cart = { items: CartItem[]; totalCents: number };
 
+const BFF = import.meta.env.VITE_CART_BFF ?? 'http://localhost:4002';
+
 export function createCartStore() {
   let cart = $state<Cart>({ items: [], totalCents: 0 });
   let loading = $state(false);
 
   async function refresh() {
     loading = true;
-    const res = await fetch('/api/cart');
+    const res = await fetch(`${BFF}/api/cart`);
     cart = await res.json();
     loading = false;
   }
 
   async function add(item: { productId: string; name: string; priceCents: number }) {
-    await fetch('/api/cart/items', {
+    await fetch(`${BFF}/api/cart/items`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...item, qty: 1 }),
@@ -149,7 +176,7 @@ export function createCartStore() {
   }
 
   async function remove(id: string) {
-    await fetch(`/api/cart/items/${id}`, { method: 'DELETE' });
+    await fetch(`${BFF}/api/cart/items/${id}`, { method: 'DELETE' });
     await refresh();
   }
 
@@ -164,12 +191,13 @@ export function createCartStore() {
 }
 ```
 
-### 4. `apps/cart/src/Cart.svelte`
+### 5. `apps/cart/src/Cart.svelte`
 
 The UI. `$effect` loads the cart on mount; the rest is plain Svelte 5 markup. We render prices with the design-system `<m-price>` primitive from [Module 5](/mosaic/en/web-components/) — a Web Component, so it works identically in Svelte and React.
 
 ```svelte
 <script lang="ts">
+  import '@mosaic/design-system/m-price';
   import { createCartStore } from './cart-store.svelte';
 
   const store = createCartStore();
@@ -192,19 +220,19 @@ The UI. `$effect` loads the cart on mount; the rest is plain Svelte 5 markup. We
       {#each store.items as item (item.id)}
         <li>
           <span>{item.name} × {item.qty}</span>
-          <m-price cents={item.priceCents * item.qty}></m-price>
+          <m-price cents={String(item.priceCents * item.qty)}></m-price>
           <button onclick={() => store.remove(item.id)}>Remove</button>
         </li>
       {/each}
     </ul>
     <p class="total">
-      Total: <m-price cents={store.totalCents}></m-price>
+      Total: <m-price cents={String(store.totalCents)}></m-price>
     </p>
   {/if}
 </section>
 ```
 
-### 5. `apps/cart/src/main.ts`
+### 6. `apps/cart/src/main.ts`
 
 A standalone dev entry so you can run the cart on its own. In the next lesson we add a *second* entry — the custom-element registrar the shell consumes — without touching this one.
 
@@ -256,7 +284,7 @@ pnpm --filter cart build
 1. The shell is React and the cart is Svelte. What single architectural choice lets them coexist without either importing the other's framework?
 2. Why does the cart BFF store a *copy* of each product's name and price instead of querying the catalog for them?
 3. Runes like `$state` live in `cart-store.svelte.ts`, not a `.svelte` component. Why is the `.svelte.ts` extension required for that to work?
-4. The Vite dev server proxies `/api` to port 4002. What problem does that solve compared to the browser calling `http://localhost:4002` directly?
+4. `cart-store.svelte.ts` fetches an absolute `http://localhost:4002` origin instead of a relative `/api` path. What would break, and where, if it used a relative path instead?
 
 ## Recap
 

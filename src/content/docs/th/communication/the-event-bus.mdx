@@ -69,6 +69,15 @@ TypeScript package ธรรมดาใน workspace ไม่มี runtime de
 }
 ```
 
+ต้องมี `tsconfig.json` ด้วย ต่อยอดจาก base เดียวกับทุก app — ไม่งั้น `tsc --noEmit` ข้างล่างจะไม่มีอะไรให้ตรวจ:
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"]
+}
+```
+
 ### 2. `packages/bus/src/index.ts`
 
 ตัว bus ทั้งหมด map `BusEvents` เป็น single source of truth ว่าอะไรส่งได้บ้าง และแต่ละ event พก payload อะไร

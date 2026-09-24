@@ -74,17 +74,26 @@ federation({
     './register': './src/register.ts',
   },
   shared: ['react', 'react-dom'],
+  dts: false, // hand-declared in remotes.d.ts instead
 });
 ```
 
 ### 3. `apps/shell/src/remotes.d.ts`
 
-declare virtual `register` module แล้วสอน TypeScript/JSX ให้รู้จัก custom tag เพื่อให้ `<catalog-app>` type-check ผ่านใน shell
+declare virtual `register` module เพื่อให้ `import('catalog/register')` type-check ผ่าน
 
 ```ts
 declare module 'catalog/register' {
   // Importing the module registers <catalog-app> as a side effect.
 }
+```
+
+### 4. `apps/shell/src/custom-elements.d.ts`
+
+สอน JSX ให้รู้จัก tag `<catalog-app>` แยกไฟล์ต่างหาก `export {}` ที่บรรทัดบนสุดสำคัญมาก — มันทำให้ไฟล์นี้เป็น ES module จริง ซึ่งเป็นสิ่งที่ทำให้ `declare module 'react' { ... }` *ต่อยอด* type ของ React แทนที่จะไปแทนที่มันเงียบ ๆ — ถ้าไม่มี `export {}` named import อย่าง `useState` ที่อื่นใน shell จะ resolve ไม่ได้
+
+```ts
+export {};
 
 declare module 'react' {
   namespace JSX {
@@ -95,7 +104,7 @@ declare module 'react' {
 }
 ```
 
-### 4. `apps/shell/src/CatalogRoute.tsx`
+### 5. `apps/shell/src/CatalogRoute.tsx`
 
 เรา import registrar เป็น side effect แล้ว render tag ไม่มี `React.lazy` ไม่มี `<Suspense>` สำหรับตัว component เอง — element mount React tree ของตัวเอง host เป็นกลาง: แค่วาง element บนหน้า
 

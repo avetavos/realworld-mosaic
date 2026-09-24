@@ -33,7 +33,7 @@ One real decision surfaces here: **how the remote reaches its BFF**. When the ca
 
 ## Set it up
 
-### 1. `apps/catalog/bff/products.ts`
+### 1. `apps/catalog/bff/src/products.ts`
 
 The in-memory data — the single source the BFF serves.
 
@@ -53,19 +53,24 @@ export const products: Product[] = [
 ];
 ```
 
-### 2. `apps/catalog/bff/server.ts`
+### 2. `apps/catalog/bff/src/app.ts`
 
-The Hono app: two routes, CORS for the `/api/*` paths (so the shell's origin can call it), served on 4001 with `@hono/node-server`.
+Extend the health-check `app.ts` from [The BFF stack](/mosaic/en/setup/the-bff-stack/) with the two product routes. `server.ts` doesn't change — it already imports this `app` and serves it on 4001.
 
 ```ts
-import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { products } from './products';
 
-const app = new Hono();
+export const app = new Hono();
 
+// The remote's dev server runs on a different origin, so allow it.
 app.use('/api/*', cors());
+
+// The health check every BFF exposes — unchanged from the setup lesson.
+app.get('/api/health', (c) =>
+  c.json({ status: 'ok', service: 'catalog-bff' }),
+);
 
 app.get('/api/products', (c) => c.json(products));
 
@@ -75,9 +80,7 @@ app.get('/api/products/:id', (c) => {
   return c.json(product);
 });
 
-serve({ fetch: app.fetch, port: 4001 }, (info) => {
-  console.log(`catalog BFF on http://localhost:${info.port}`);
-});
+export default app;
 ```
 
 ### 3. `apps/catalog/src/Catalog.tsx`
@@ -133,7 +136,7 @@ export default function Catalog() {
 Start the BFF and hit both routes directly:
 
 ```bash
-pnpm --filter catalog dev:bff
+pnpm --filter @mosaic/catalog-bff dev
 # catalog BFF on http://localhost:4001
 ```
 
@@ -152,7 +155,7 @@ Now run the remote and the BFF together and load the catalog in the shell — th
 
 ```bash
 pnpm --filter catalog dev        # remote on 5001
-pnpm --filter catalog dev:bff    # BFF on 4001
+pnpm --filter @mosaic/catalog-bff dev    # BFF on 4001
 pnpm --filter shell dev          # shell on 5000 — open the catalog page
 # The four cards now come from the BFF. Stop the BFF and reload:
 # the remote shows "Couldn’t load products" instead of crashing the shell.

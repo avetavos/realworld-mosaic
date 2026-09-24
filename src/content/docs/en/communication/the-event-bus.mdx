@@ -69,6 +69,15 @@ A plain TypeScript package in the workspace. No runtime dependencies.
 }
 ```
 
+It needs a `tsconfig.json` too, extending the shared base like every app — otherwise `tsc --noEmit` below has nothing to check against:
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"]
+}
+```
+
 ### 2. `packages/bus/src/index.ts`
 
 The whole bus. The `BusEvents` map is the single source of truth for what may be sent and what each event carries.

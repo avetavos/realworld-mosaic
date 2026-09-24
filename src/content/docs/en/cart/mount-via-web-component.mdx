@@ -85,12 +85,12 @@ export default defineConfig({
       // The Svelte remote exposes a REGISTRAR, not a component.
       exposes: { './register': './src/register.ts' },
       shared: [], // shares nothing React with the host
+      dts: false, // hand-declared in remotes.d.ts instead
     }),
   ],
   server: {
     port: 5002,
     origin: 'http://localhost:5002',
-    proxy: { '/api': 'http://localhost:4002' },
   },
   build: { target: 'esnext' },
 });
@@ -134,13 +134,17 @@ export function CartPanel() {
 }
 ```
 
-TypeScript doesn't know about `<cart-app>` by default. Declare it once so JSX type-checks:
+TypeScript doesn't know about `<cart-app>` by default. Add it to the shell's `custom-elements.d.ts` from [Web Components Interop](/mosaic/en/web-components/custom-element-boundary/) — same file, another entry on the same augmented `IntrinsicElements`:
 
 ```ts
 // apps/shell/src/custom-elements.d.ts
-declare namespace JSX {
-  interface IntrinsicElements {
-    'cart-app': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+export {};
+
+declare module 'react' {
+  namespace JSX {
+    interface IntrinsicElements {
+      'cart-app': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+    }
   }
 }
 ```

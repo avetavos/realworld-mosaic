@@ -38,7 +38,35 @@ cart ยังทำตามกฎ **vertical slice** เดียวกับ 
 
 ## ติดตั้ง
 
-### 1. `apps/cart/bff/server.ts`
+### 1. `apps/cart/package.json`
+
+cart app กับ BFF ของมันอยู่ package เดียวกัน — shape เดียวกับ shell และ catalog (dev/build/preview/typecheck บน port 5002) บวก `hono` กับ `@hono/node-server` สำหรับไฟล์ BFF ใต้ `bff/` และ `tsx` เพื่อรันตรง ๆ โดยไม่ต้อง build
+
+```json
+{
+  "name": "cart",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5002 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --port 5002 --strictPort",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "svelte": "^5.0.0",
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0",
+    "@mosaic/design-system": "workspace:*"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.2.0",
+    "tsx": "^4.19.0"
+  }
+}
+```
+
+### 2. `apps/cart/bff/server.ts`
 
 BFF เก็บ cart ใน memory ที่ key ด้วย process (mock session เดียวสำหรับคอร์สนี้) สะท้อน endpoint เป๊ะ ๆ ตาม build contract
 
@@ -94,9 +122,9 @@ serve({ fetch: app.fetch, port: 4002 }, (info) => {
 });
 ```
 
-### 2. `apps/cart/vite.config.ts`
+### 3. `apps/cart/vite.config.ts`
 
-Svelte + Vite app ธรรมดาไปก่อน dev server บน **5002** พร้อม `/api` proxy ไปที่ BFF เพื่อให้ browser คุยกับ origin เดียวเท่านั้นตอน development federation config มาในบทถัดไป
+Svelte + Vite app ธรรมดาไปก่อน dev server บน **5002** federation config มาในบทถัดไป
 
 ```ts
 import { defineConfig } from 'vite';
@@ -106,16 +134,13 @@ export default defineConfig({
   plugins: [svelte()],
   server: {
     port: 5002,
-    proxy: {
-      '/api': 'http://localhost:4002',
-    },
   },
 });
 ```
 
-### 3. `apps/cart/src/cart-store.svelte.ts`
+### 4. `apps/cart/src/cart-store.svelte.ts`
 
-runes ทำงานใน `.svelte.ts` module ได้ด้วย ดังนั้น cart state กับการเรียก BFF ของตัวเองอยู่ที่เดียวกัน — store เล็ก ๆ ที่ UI แค่อ่าน `$state` ทำให้ object reactive ลึก ทุกไฟล์ `.svelte` ที่อ่าน `store.items` จะ re-render เมื่อค่าเปลี่ยน
+runes ทำงานใน `.svelte.ts` module ได้ด้วย ดังนั้น cart state กับการเรียก BFF ของตัวเองอยู่ที่เดียวกัน — store เล็ก ๆ ที่ UI แค่อ่าน `$state` ทำให้ object reactive ลึก ทุกไฟล์ `.svelte` ที่อ่าน `store.items` จะ re-render เมื่อค่าเปลี่ยน เหมือน BFF call ของ catalog อันนี้ fetch origin แบบ **absolute** แทน path `/api` แบบ relative — dev proxy จะทำงานได้ตอนรันแยกเดี่ยว ๆ แต่จะพังเงียบ ๆ ทันทีที่[บทถัดไป](/mosaic/th/cart/mount-via-web-component/) mount cart ตัวนี้เข้าไปใน shell คนละ origin
 
 ```ts
 type CartItem = {
@@ -128,19 +153,21 @@ type CartItem = {
 
 type Cart = { items: CartItem[]; totalCents: number };
 
+const BFF = import.meta.env.VITE_CART_BFF ?? 'http://localhost:4002';
+
 export function createCartStore() {
   let cart = $state<Cart>({ items: [], totalCents: 0 });
   let loading = $state(false);
 
   async function refresh() {
     loading = true;
-    const res = await fetch('/api/cart');
+    const res = await fetch(`${BFF}/api/cart`);
     cart = await res.json();
     loading = false;
   }
 
   async function add(item: { productId: string; name: string; priceCents: number }) {
-    await fetch('/api/cart/items', {
+    await fetch(`${BFF}/api/cart/items`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...item, qty: 1 }),
@@ -149,7 +176,7 @@ export function createCartStore() {
   }
 
   async function remove(id: string) {
-    await fetch(`/api/cart/items/${id}`, { method: 'DELETE' });
+    await fetch(`${BFF}/api/cart/items/${id}`, { method: 'DELETE' });
     await refresh();
   }
 
@@ -164,12 +191,13 @@ export function createCartStore() {
 }
 ```
 
-### 4. `apps/cart/src/Cart.svelte`
+### 5. `apps/cart/src/Cart.svelte`
 
 UI `$effect` โหลด cart ตอน mount ที่เหลือเป็น Svelte 5 markup ธรรมดา เรา render ราคาด้วย design-system `<m-price>` primitive จาก [Module 5](/mosaic/th/web-components/) — Web Component ที่ทำงานเหมือนกันเป๊ะทั้งใน Svelte และ React
 
 ```svelte
 <script lang="ts">
+  import '@mosaic/design-system/m-price';
   import { createCartStore } from './cart-store.svelte';
 
   const store = createCartStore();
@@ -192,19 +220,19 @@ UI `$effect` โหลด cart ตอน mount ที่เหลือเป็
       {#each store.items as item (item.id)}
         <li>
           <span>{item.name} × {item.qty}</span>
-          <m-price cents={item.priceCents * item.qty}></m-price>
+          <m-price cents={String(item.priceCents * item.qty)}></m-price>
           <button onclick={() => store.remove(item.id)}>Remove</button>
         </li>
       {/each}
     </ul>
     <p class="total">
-      Total: <m-price cents={store.totalCents}></m-price>
+      Total: <m-price cents={String(store.totalCents)}></m-price>
     </p>
   {/if}
 </section>
 ```
 
-### 5. `apps/cart/src/main.ts`
+### 6. `apps/cart/src/main.ts`
 
 standalone dev entry เพื่อให้คุณรัน cart แยกเดี่ยวได้ ในบทถัดไปเราเพิ่ม entry *ตัวที่สอง* — custom-element registrar ที่ shell consume — โดยไม่แตะตัวนี้
 
@@ -256,7 +284,7 @@ pnpm --filter cart build
 1. shell เป็น React และ cart เป็น Svelte ทางเลือกทางสถาปัตยกรรมข้อเดียวข้อไหนที่ทำให้ทั้งคู่อยู่ร่วมกันได้โดยไม่ต้อง import framework ของอีกฝ่าย?
 2. ทำไม cart BFF ถึงเก็บ *copy* ของชื่อและราคาของแต่ละ product แทนที่จะ query catalog เอา?
 3. runes อย่าง `$state` อยู่ใน `cart-store.svelte.ts` ไม่ใช่ component `.svelte` ทำไมถึงต้องมีนามสกุล `.svelte.ts` เพื่อให้ runes ทำงาน?
-4. Vite dev server proxy `/api` ไปที่ port 4002 ช่วยแก้ปัญหาอะไรเทียบกับให้ browser เรียก `http://localhost:4002` ตรง ๆ?
+4. `cart-store.svelte.ts` fetch origin แบบ absolute `http://localhost:4002` แทน path `/api` แบบ relative ถ้าใช้ relative path แทน อะไรจะพัง และพังตรงไหน?
 
 ## สรุป
 

@@ -7,7 +7,7 @@ sidebar:
 
 ## What we're building
 
-A two-level routing scheme. The **shell** owns the top-level routes with **react-router** (v7, in library mode) — `/`, `/catalog/*`, `/cart`, `/content`. Each **remote** owns everything *below* its slot: the catalog remote decides what `/catalog`, `/catalog/p/42`, and `/catalog/search` render, without the shell knowing those paths exist.
+A two-level routing scheme. The **shell** owns the top-level routes with **react-router** (v8, in Declarative Mode) — `/`, `/catalog/*`, `/cart`, `/content`. Each **remote** owns everything *below* its slot: the catalog remote decides what `/catalog`, `/catalog/p/42`, and `/catalog/search` render, without the shell knowing those paths exist.
 
 The mechanism is a **splat route** in the shell that hands the rest of the URL to the remote, and a **descendant `<Routes>`** inside the remote that matches relative to that mount point. One browser history, two routers that agree on where the boundary is.
 

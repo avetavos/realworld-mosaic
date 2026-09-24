@@ -43,7 +43,7 @@ design system สำหรับแอป **framework เดียว** ง่�
 
 ### 1. `packages/design-system/package.json`
 
-ESM package ธรรมดา ไม่ต้องมี build step ตอน dev — Vite consume `.ts` source ตรง ๆ ผ่าน workspace
+ESM package ธรรมดา ไม่ต้องมี build step ตอน dev — Vite consume `.ts` source ตรง ๆ ผ่าน workspace ต่อยอด `packages/design-system/package.json` จาก [A Shared Primitive](/mosaic/th/web-components/a-shared-primitive/) ด้วย main index กับ token sheet โดยคง `./m-price` export เดิมไว้:
 
 ```json
 {
@@ -52,8 +52,18 @@ ESM package ธรรมดา ไม่ต้องมี build step ตอน 
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./m-price": "./src/m-price.ts"
   }
+}
+```
+
+ต้องมี `tsconfig.json` แบบเดียวกับทุก package ในเวิร์กสเปซด้วย:
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"]
 }
 ```
 

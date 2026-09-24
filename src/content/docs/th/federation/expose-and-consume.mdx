@@ -47,14 +47,14 @@ catalog เป็น React remote บน port 5001 base React + Vite เดี�
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "react": "^18.3.0",
-    "react-dom": "^18.3.0"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.0",
     "@module-federation/vite": "^1.7.0",
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0"
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
   }
 }
 ```
@@ -78,6 +78,7 @@ export default defineConfig({
         './Widget': './src/Widget.tsx',
       },
       shared: ['react', 'react-dom'],
+      dts: false, // no type declarations to generate for this scratch remote
     }),
   ],
   server: {

@@ -33,7 +33,7 @@ An **error boundary** catches that rejection at a chosen point in the tree and r
 
 ### 1. `apps/shell/src/RemoteBoundary.tsx`
 
-A small error boundary with a retry. It resets on demand so a transient failure can be re-attempted without a full page reload.
+A small error boundary with a retry. It resets the failure state on demand, so a stuck fallback doesn't require the user to know they can reload the page — though as the Verify section below shows, a dead JS import specifically needs that reload to actually recover.
 
 ```tsx
 import { Component, type ReactNode } from 'react';
@@ -77,31 +77,50 @@ export class RemoteBoundary extends Component<Props, State> {
 
 ### 2. `apps/shell/src/mountCatalog.tsx`
 
-Wrap the [federated catalog remote](/mosaic/en/catalog/) in the boundary *and* a `<Suspense>`. The boundary owns the failure state; Suspense owns the loading state.
+Since [Web Components Interop](/mosaic/en/web-components/custom-element-boundary/), the catalog mounts through the same custom-element boundary as the cart — `App.tsx` imports `catalog/register` for its side effect and renders `<catalog-app>`, not `React.lazy(() => import('catalog/Catalog'))` anymore. So its failure mode is the one below: `import('catalog/register')` can reject before `<catalog-app>` is ever defined. Guard the *registration*, not a React component.
 
 ```tsx
-import { lazy, Suspense } from 'react';
+import { Component, type ReactNode } from 'react';
 import { RemoteBoundary } from './RemoteBoundary';
 
-// If remoteEntry.js can't be fetched, this import() rejects.
-const Catalog = lazy(() => import('catalog/Catalog'));
+// Imperatively load + register the custom element, surfacing failure to React.
+class CatalogLoader extends Component<{ children: ReactNode }, { ready: boolean; error: Error | null }> {
+  state = { ready: false, error: null as Error | null };
+
+  async componentDidMount() {
+    try {
+      await import('catalog/register'); // defines <catalog-app>
+      this.setState({ ready: true });
+    } catch (error) {
+      // Re-throw on the next render so RemoteBoundary catches it.
+      this.setState(() => {
+        throw error as Error;
+      });
+    }
+  }
+
+  render() {
+    return this.state.ready ? this.props.children : <div className="remote-loading">Loading catalog…</div>;
+  }
+}
 
 export function MountCatalog() {
   return (
     <RemoteBoundary name="Catalog">
-      <Suspense fallback={<div className="remote-loading">Loading catalog…</div>}>
-        <Catalog />
-      </Suspense>
+      <CatalogLoader>
+        {/* Custom element — the React types accept it as an intrinsic tag. */}
+        <catalog-app></catalog-app>
+      </CatalogLoader>
     </RemoteBoundary>
   );
 }
 ```
 
-The ordering matters: `RemoteBoundary` must be *outside* `Suspense`. A rejected lazy import throws during render, and only a boundary above the throwing component can catch it.
+Because a dynamic `import()` rejection lands in a promise, not in React's render, we re-throw it from a state updater so `RemoteBoundary` can see it — a plain `.then(() => setReady(true))` with no `.catch` (like `CatalogRoute.tsx` used before this module) would leave the failure stuck in "Loading…" forever, since the rejection never reaches React's render cycle at all.
 
 ### 3. `apps/shell/src/mountCart.tsx`
 
-The [Svelte cart remote mounts through a custom element](/mosaic/en/cart/), so its failure mode is different: `import('cart/register')` can reject before `<cart-app>` is ever defined. Guard the *registration*, not a React component.
+The cart remote mounts the exact same way — a custom element behind a registrar import — so `CartLoader` is `CatalogLoader` with the names swapped. Two small, explicit copies here beat one generic loader parameterized by module id: Module Federation's plugin recognizes federated `import()` calls by their literal string specifier, and a dynamic specifier would risk breaking that.
 
 ```tsx
 import { Component, type ReactNode } from 'react';
@@ -140,8 +159,6 @@ export function MountCart() {
 }
 ```
 
-Because a dynamic `import()` rejection lands in a promise, not in React's render, we re-throw it from a state updater so the boundary can see it. That's the one seam where load-time failures need a nudge to reach the boundary.
-
 ## Verify
 
 Run the shell against remotes, then take one remote offline and confirm the shell survives.
@@ -158,7 +175,7 @@ Open `http://localhost:5000/`. Because nothing is serving `http://localhost:5001
 - The top-nav, session, and cart badge are **still rendered and interactive** — the page did not go blank.
 - The console shows a single `[shell] remote "Catalog" failed` line, not an unhandled React tree crash.
 
-Now start the remote and retry, without reloading the shell:
+Now start the remote back up:
 
 ```bash
 # Terminal 2
@@ -166,7 +183,7 @@ pnpm --filter catalog dev
 # ➜  Local:   http://localhost:5001/
 ```
 
-Click **Try again** in the Catalog panel. The boundary resets, the lazy import re-runs, and the catalog grid mounts. Finish with a production build to confirm the boundary compiles cleanly:
+Click **Try again** in the Catalog panel — the boundary resets and the loader re-runs `import('catalog/register')`, but the browser's module loader has already cached *that specific import's rejection*, so this first click fails again with the same message. That's expected, not a bug in `RemoteBoundary`: a rejected dynamic import is cached forever by the JS engine, the same way a 404'd script tag never magically retries itself. **Reload the page** — a fresh page load re-evaluates the import from scratch against the now-running remote — and the catalog grid mounts. In production this is exactly why [Module Federation runtime plugins](/mosaic/en/wrap-up/next-steps/) like a retry plugin exist: they retry the underlying `fetch`, not the cached `import()`, so a transient failure can recover without a reload. Finish with a production build to confirm the boundary compiles cleanly:
 
 ```bash
 pnpm --filter shell build
@@ -175,13 +192,13 @@ pnpm --filter shell build
 
 Check your understanding:
 
-1. `<Suspense>` already shows a fallback while a remote loads. Why doesn't that cover a `remoteEntry.js` that 404s?
-2. Why must `RemoteBoundary` sit *outside* `<Suspense>` rather than inside it?
-3. The Svelte cart loads via `import('cart/register')`, not `React.lazy`. Why does its failure need to be re-thrown from a state updater to reach the boundary?
+1. `CatalogLoader` and `CartLoader` both catch the load failure in a `try`/`catch` around an `await import(...)`. Why isn't the `catch` block alone enough to show the fallback — why the `this.setState(() => { throw error; })` on top of it?
+2. `CatalogRoute.tsx` (from Module 5) used a plain `.then(() => setReady(true))` with no `.catch`. What would the user see if a remote failed to load while mounted that way, and why?
+3. Both remotes now load via `import('.../register')`, not `React.lazy`. Why does that failure need to be re-thrown from a state updater to reach the boundary?
 4. What is the "blast radius" difference between one boundary per remote and a single boundary around the whole shell?
 
 ## Recap
 
-You wrapped each remote in an error boundary so a failed `remoteEntry.js` degrades exactly one slice instead of blanking the shell — the isolation that makes runtime composition safe. You handled both the React-component remote (catalog) and the custom-element remote (cart), including the load-time rejection seam that needs an explicit re-throw.
+You wrapped each remote in an error boundary so a failed `remoteEntry.js` degrades exactly one slice instead of blanking the shell — the isolation that makes runtime composition safe. Both remotes mount through the same custom-element loader shape, including the load-time rejection seam that needs an explicit re-throw to reach `RemoteBoundary`.
 
 Next, we make composition *fast* as well as safe: [Lazy loading & dedupe →](/mosaic/en/resilience/lazy-and-dedupe/).

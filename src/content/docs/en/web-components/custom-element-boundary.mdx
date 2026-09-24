@@ -74,17 +74,26 @@ federation({
     './register': './src/register.ts',
   },
   shared: ['react', 'react-dom'],
+  dts: false, // hand-declared in remotes.d.ts instead
 });
 ```
 
 ### 3. `apps/shell/src/remotes.d.ts`
 
-Declare the virtual `register` module, and teach TypeScript/JSX about the custom tag so `<catalog-app>` type-checks in the shell.
+Declare the virtual `register` module so `import('catalog/register')` type-checks.
 
 ```ts
 declare module 'catalog/register' {
   // Importing the module registers <catalog-app> as a side effect.
 }
+```
+
+### 4. `apps/shell/src/custom-elements.d.ts`
+
+Teach JSX about the `<catalog-app>` tag, in its own file. The `export {}` at the top matters: it makes this file a real ES module, which is what lets `declare module 'react' { ... }` *augment* React's types instead of silently replacing them — without it, named imports like `useState` elsewhere in the shell stop resolving.
+
+```ts
+export {};
 
 declare module 'react' {
   namespace JSX {
@@ -95,7 +104,7 @@ declare module 'react' {
 }
 ```
 
-### 4. `apps/shell/src/CatalogRoute.tsx`
+### 5. `apps/shell/src/CatalogRoute.tsx`
 
 Import the registrar as a side effect, then render the tag. No `React.lazy`, no `<Suspense>` for the component itself — the element mounts its own React tree. The host is agnostic: it just placed an element on the page.
 

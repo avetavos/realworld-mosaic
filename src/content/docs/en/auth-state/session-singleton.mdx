@@ -64,6 +64,15 @@ Depends on the bus, because it announces `auth:changed`.
 }
 ```
 
+Same as `@mosaic/bus`, it needs its own `tsconfig.json`:
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"]
+}
+```
+
 ### 2. `packages/session/src/index.ts`
 
 A module-level store plus subscribers. Every change persists, notifies local subscribers, **and** emits on the bus.

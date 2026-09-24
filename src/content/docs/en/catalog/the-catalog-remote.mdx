@@ -50,6 +50,8 @@ export default defineConfig({
         './Catalog': './src/Catalog.tsx',
       },
       shared: ['react', 'react-dom'],
+      // Hand-declared in remotes.d.ts instead — skip the plugin's auto DTS generation.
+      dts: false,
     }),
   ],
   server: {
